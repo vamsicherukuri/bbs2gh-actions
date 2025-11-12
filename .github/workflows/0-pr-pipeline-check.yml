@@ -16,7 +16,7 @@ on:
           - 'true'
           - 'false'
       bbs_base_url:
-        description: 'Bitbucket Server/DC base URL'
+        description: 'Bitbucket Server/DC base URL (e.g., https://bitbucket.example.com)'
         required: true
         type: string
 
@@ -92,8 +92,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bbs-precheck-${{ github.run_number }}
-          path: |
-            bbs_pipeline_validation_output-*.csv
+          path: bbs_pipeline_validation_output-*.csv
           retention-days: 30
           if-no-files-found: warn
 
@@ -106,58 +105,43 @@ jobs:
           $triggerMigration = "${{ inputs.trigger_migration }}"
           $csvPath = "${{ inputs.csv_path }}"
 
-          $statusIcon = if ($passed -eq 'true' -and $hasBlockers -eq 'false') { "✅" } else { "❌" }
-          $statusText = if ($passed -eq 'true' -and $hasBlockers -eq 'false') { "PASSED" } else { "FAILED" }
-          $statusColor = if ($passed -eq 'true' -and $hasBlockers -eq 'false') { "🟢" } else { "🔴" }
-          $recommendation = if ($passed -eq 'true' -and $hasBlockers -eq 'false') {
-            "**You can safely proceed with the migration.**"
-          } else {
-            "**Migration is NOT recommended. Please resolve the blockers first.**"
-          }
-
-          $summary = @"
-# 🔎 Bitbucket Pipeline Readiness Check Results
-## Overall Status: $statusColor $statusText
-For repositories in: ``$csvPath``
-
-### Validation Checks Performed
-- ✅ **Open Pull Requests** (`state=OPEN`, paged)
-- ✅ **Running Builds** on latest default-branch commit (Bitbucket build status)
-- ✅ **Archived Repositories**
-
-### Recommendation
-$recommendation
-"@
-
+          # Write summary (line-by-line to avoid here-string parsing issues)
+          Add-Content $env:GITHUB_STEP_SUMMARY "# 🔎 Bitbucket Pipeline Readiness Check Results"
+          Add-Content $env:GITHUB_STEP_SUMMARY ""
           if ($passed -eq 'true' -and $hasBlockers -eq 'false') {
-            $summary += @"
-#### ✅ Ready to Migrate
-1. Manual trigger your migration workflow.
-2. Verify GitHub mapping in CSV (`github_org`, `github_repo`, `gh_repo_visibility`).
-"@
+            Add-Content $env:GITHUB_STEP_SUMMARY "## Overall Status: 🟢 PASSED"
+          } else {
+            Add-Content $env:GITHUB_STEP_SUMMARY "## Overall Status: 🔴 FAILED"
+          }
+          Add-Content $env:GITHUB_STEP_SUMMARY ""
+          Add-Content $env:GITHUB_STEP_SUMMARY "For repositories in: ``$csvPath``"
+          Add-Content $env:GITHUB_STEP_SUMMARY ""
+          Add-Content $env:GITHUB_STEP_SUMMARY "### Validation Checks Performed"
+          Add-Content $env:GITHUB_STEP_SUMMARY "- ✅ Open Pull Requests (state=OPEN, paged)"
+          Add-Content $env:GITHUB_STEP_SUMMARY "- ✅ Running Builds on latest default-branch commit (Bitbucket build status)"
+          Add-Content $env:GITHUB_STEP_SUMMARY "- ✅ Archived Repositories"
+
+          Add-Content $env:GITHUB_STEP_SUMMARY ""
+          if ($passed -eq 'true' -and $hasBlockers -eq 'false') {
+            Add-Content $env:GITHUB_STEP_SUMMARY "### Recommendation"
+            Add-Content $env:GITHUB_STEP_SUMMARY "**You can safely proceed with the migration.**"
             if ($triggerMigration -eq 'true') {
-              $summary += @"
-#### 🚀 Auto-Trigger Enabled
-Migration workflow will be dispatched after this job.
-"@
+              Add-Content $env:GITHUB_STEP_SUMMARY ""
+              Add-Content $env:GITHUB_STEP_SUMMARY "#### 🚀 Auto-Trigger Enabled"
+              Add-Content $env:GITHUB_STEP_SUMMARY "Migration workflow will be dispatched after this job."
             }
           } else {
-            $summary += @"
-#### ❌ Action Required
-- Resolve OPEN PRs or pause builds (INPROGRESS).
-- Ensure default branch / latest commit are discoverable.
-- Re-run this check.
-"@
+            Add-Content $env:GITHUB_STEP_SUMMARY "### Action Required"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Resolve OPEN PRs or pause builds (INPROGRESS)."
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Ensure default branch / latest commit are discoverable."
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Re-run this check."
           }
 
-          $summary += @"
----
-📅 **Check Date**: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
-📁 **CSV File**: ``$csvPath``
-🔗 **Bitbucket Base URL**: `${{ inputs.bbs_base_url }}`
-"@
-
-          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          Add-Content $env:GITHUB_STEP_SUMMARY ""
+          Add-Content $env:GITHUB_STEP_SUMMARY "---"
+          Add-Content $env:GITHUB_STEP_SUMMARY "📅 **Check Date**: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")"
+          Add-Content $env:GITHUB_STEP_SUMMARY "📁 **CSV File**: ``$csvPath``"
+          Add-Content $env:GITHUB_STEP_SUMMARY "🔗 **Bitbucket Base URL**: `${{ inputs.bbs_base_url }}`"
 
       - name: Fail if Blockers Found (Optional)
         if: env.HAS_BLOCKERS == 'true'
