@@ -10,11 +10,8 @@ on:
       trigger_migration:
         description: 'Automatically trigger migration after successful check?'
         required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
+        default: false
+        type: boolean
       bbs_base_url:
         description: 'Bitbucket Server/DC base URL (e.g., https://bitbucket.example.com)'
         required: true
@@ -144,9 +141,15 @@ jobs:
   trigger-migration:
     needs: readiness-check
     runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.trigger_migration && needs['readiness-check'].outputs['check-passed'] == 'true' && needs['readiness-check'].outputs['has-blockers'] == 'false' }}
     steps:
-      - name: Trigger Migration Workflow (only when passed & no blockers)
-        if: ${{ github.event.inputs.trigger_migration == 'true' && needs['readiness-check'].outputs['check-passed'] == 'true' && needs['readiness-check'].outputs['has-blockers'] == 'false' }}
+      - name: Debug inputs (optional)
+        run: |
+          echo "trigger_migration = ${{ github.event.inputs.trigger_migration }}"
+          echo "check-passed     = ${{ needs['readiness-check'].outputs['check-passed'] }}"
+          echo "has-blockers     = ${{ needs['readiness-check'].outputs['has-blockers'] }}"
+
+      - name: Trigger Migration Workflow
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GH_PAT }}
