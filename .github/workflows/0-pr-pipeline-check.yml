@@ -180,7 +180,7 @@ jobs:
             });
             console.log('🚀 Migration workflow triggered successfully!');
   finalize:
-    needs: readiness-check
+    needs: [readiness-check,trigger-migration]
     runs-on: ubuntu-latest
     if: ${{ !github.event.inputs.trigger_migration && needs['readiness-check'].outputs['check-passed'] == 'true' && needs['readiness-check'].outputs['has-blockers'] == 'false' }}
     steps:
