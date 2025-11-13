@@ -11,16 +11,16 @@ on:
         description: 'Bitbucket Server/DC base URL, e.g. https://bitbucket.example.com'
         required: true
         type: string
-  workflow_call:
-    inputs:
-      csv_path:
-        description: 'Path to CSV file with repository list'
-        required: true
-        type: string
-      bbs_base_url:
-        description: 'Bitbucket Server/DC base URL, e.g. https://bitbucket.example.com'
-        required: true
-        type: string
+  # workflow_call:
+  #   inputs:
+  #     csv_path:
+  #       description: 'Path to CSV file with repository list'
+  #       required: true
+  #       type: string
+  #     bbs_base_url:
+  #       description: 'Bitbucket Server/DC base URL, e.g. https://bitbucket.example.com'
+  #       required: true
+  #       type: string
 
 permissions:
   contents: read
