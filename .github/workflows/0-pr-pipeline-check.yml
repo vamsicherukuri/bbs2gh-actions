@@ -7,12 +7,12 @@ on:
         description: 'Path to repos CSV file'
         required: false
         default: 'repos.csv'
-      trigger_migration:
-        description: 'Automatically trigger migration after successful check?'
-        required: false
-        default: 'false'
-        type: choice
-        options: ['true', 'false']
+      # trigger_migration:
+      #   description: 'Automatically trigger migration after successful check?'
+      #   required: false
+      #   default: 'false'
+      #   type: choice
+      #   options: ['true', 'false']
       bbs_base_url:
         description: 'Bitbucket Server/DC base URL (e.g., https://bitbucket.example.com)'
         required: true
@@ -133,9 +133,9 @@ jobs:
           Add-Content $env:GITHUB_STEP_SUMMARY '# 🔎 Bitbucket Pipeline Readiness Check Results'
           Add-Content $env:GITHUB_STEP_SUMMARY ''
           if ($passed -eq 'true' -and $hasBlockers -eq 'false') {
-            Add-Content $env:GITHUB_STEP_SUMMARY '## Overall Status: 🟢 PASSED'
+            Add-Content $env:GITHUB_STEP_SUMMARY '## Overall Status: 🟢 Safe for Migration'
           } else {
-            Add-Content $env:GITHUB_STEP_SUMMARY '## Overall Status: 🔴 FAILED'
+            Add-Content $env:GITHUB_STEP_SUMMARY '## Overall Status: 🔴 Actions Required'
           }
           Add-Content $env:GITHUB_STEP_SUMMARY ''
           Add-Content $env:GITHUB_STEP_SUMMARY ("For repositories in: ``" + $csvPath + "``")
@@ -174,25 +174,25 @@ jobs:
           # Uncomment to hard fail:
           # exit 1
 
-  trigger-migration:
-    needs: readiness-check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger Migration Workflow (only when passed & no blockers)
-        if: ${{ github.event.inputs.trigger_migration == 'true' && needs['readiness-check'].outputs['check-passed'] == 'true' && needs['readiness-check'].outputs['has-blockers'] == 'false' }}
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          script: |
-            console.log('✅ Readiness check passed! Triggering migration workflow...');
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: '1-migration.yml',
-              ref: 'main',
-              inputs: {
-                csv_path: '${{ inputs.csv_path }}',
-                max_concurrent: '3'
-              }
-            });
-            console.log('🚀 Migration workflow triggered successfully!');
+  # trigger-migration:
+  #   needs: readiness-check
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Trigger Migration Workflow (only when passed & no blockers)
+  #       if: ${{ github.event.inputs.trigger_migration == 'true' && needs['readiness-check'].outputs['check-passed'] == 'true' && needs['readiness-check'].outputs['has-blockers'] == 'false' }}
+  #       uses: actions/github-script@v7
+  #       with:
+  #         github-token: ${{ secrets.GH_PAT }}
+  #         script: |
+  #           console.log('✅ Readiness check passed! Triggering migration workflow...');
+  #           await github.rest.actions.createWorkflowDispatch({
+  #             owner: context.repo.owner,
+  #             repo: context.repo.repo,
+  #             workflow_id: '1-migration.yml',
+  #             ref: 'main',
+  #             inputs: {
+  #               csv_path: '${{ inputs.csv_path }}',
+  #               max_concurrent: '3'
+  #             }
+  #           });
+  #           console.log('🚀 Migration workflow triggered successfully!');
