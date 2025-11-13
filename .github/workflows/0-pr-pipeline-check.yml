@@ -126,7 +126,6 @@ jobs:
         run: |
           $passed = $env:READINESS_CHECK_PASSED
           $hasBlockers = $env:HAS_BLOCKERS
-          $triggerMigration = "${{ inputs.trigger_migration }}"
           $csvPath = "${{ inputs.csv_path }}"
           $bbsUrl = "${{ inputs.bbs_base_url }}"
 
@@ -138,7 +137,6 @@ jobs:
           # Header
           Add-Content $env:GITHUB_STEP_SUMMARY '# 🔎 Bitbucket Pipeline Readiness Check Results'
           Add-Content $env:GITHUB_STEP_SUMMARY ''
-
           if ($passed -eq 'true' -and $hasBlockers -eq 'false') {
             Add-Content $env:GITHUB_STEP_SUMMARY '## Overall Status: 🟢 PASSED'
           } else {
@@ -147,78 +145,121 @@ jobs:
           Add-Content $env:GITHUB_STEP_SUMMARY ''
           Add-Content $env:GITHUB_STEP_SUMMARY ("For repositories in: ``" + $csvPath + "``")
           Add-Content $env:GITHUB_STEP_SUMMARY ''
-          Add-Content $env:GITHUB_STEP_SUMMARY '### Checks Performed'
-          Add-Content $env:GITHUB_STEP_SUMMARY '- ✅ Open Pull Requests (state=OPEN, paged)'
-          Add-Content $env:GITHUB_STEP_SUMMARY '- ✅ Running Builds on latest default-branch commit (Bitbucket build status)'
-          Add-Content $env:GITHUB_STEP_SUMMARY '- ✅ Archived Repositories'
-          Add-Content $env:GITHUB_STEP_SUMMARY '- ✅ Default branch / latest commit discoverability'
+          Add-Content $env:GITHUB_STEP_SUMMARY '### Checks (full set runs, summary shows only PRs/Builds/Releases)'
+          Add-Content $env:GITHUB_STEP_SUMMARY '- ✅ Open Pull Requests'
+          Add-Content $env:GITHUB_STEP_SUMMARY '- ✅ Running Builds on latest default-branch commit'
+          Add-Content $env:GITHUB_STEP_SUMMARY '- ✅ Running Releases (if present in output CSV)'
           Add-Content $env:GITHUB_STEP_SUMMARY ''
 
           if (-not $outCsv) {
-            Add-Content $env:GITHUB_STEP_SUMMARY '> ⚠️ No output CSV found; cannot list repos with blockers.'
+            Add-Content $env:GITHUB_STEP_SUMMARY '> ⚠️ No output CSV found; cannot list repos.'
           } else {
             $data = Import-Csv $outCsv.FullName
 
-            # Rows with any blockers
-            $withBlockers = $data | Where-Object { $_.blockers -and $_.blockers.Trim() -ne '' }
-
-            if ($withBlockers -and $withBlockers.Count -gt 0) {
-
-              # --- Per-blocker counts (split semicolon-separated list) ---
-              $allBlockers = @()
-              foreach ($r in $withBlockers) {
-                $parts = ($r.blockers -split ';') | Where-Object { $_ -and $_.Trim() -ne '' }
-                $allBlockers += $parts
-              }
-              $blockerCounts = $allBlockers | Group-Object | Sort-Object Count -Descending
-
-              Add-Content $env:GITHUB_STEP_SUMMARY '### 🚧 Repositories with Blockers'
-              Add-Content $env:GITHUB_STEP_SUMMARY ''
-              Add-Content $env:GITHUB_STEP_SUMMARY '| Project Key | Repo | Blockers |'
-              Add-Content $env:GITHUB_STEP_SUMMARY '|---|---|---|'
-
-              foreach ($r in $withBlockers) {
-                $proj = $r.project_key
-                $repo = $r.repo_slug
-                $blk  = $r.blockers -replace ';', ', '
-                Add-Content $env:GITHUB_STEP_SUMMARY ("| `{0}` | `{1}` | {2} |" -f $proj, $repo, $blk)
-              }
-
-              Add-Content $env:GITHUB_STEP_SUMMARY ''
-              Add-Content $env:GITHUB_STEP_SUMMARY '#### Blocker Type Totals'
-              foreach ($g in $blockerCounts) {
-                Add-Content $env:GITHUB_STEP_SUMMARY ("- **{0}**: {1}" -f $g.Name, $g.Count)
-              }
-
-              # Optional: full detail expansion (useful during triage)
-              Add-Content $env:GITHUB_STEP_SUMMARY ''
-              Add-Content $env:GITHUB_STEP_SUMMARY '<details><summary>🔍 Full details (open PR count, build status counts, defaults)</summary>'
-              Add-Content $env:GITHUB_STEP_SUMMARY ''
-              Add-Content $env:GITHUB_STEP_SUMMARY '| Project Key | Repo | Open PRs | Builds (InProg/Fail/Succ/Cancel) | Default Branch | Latest Commit |'
-              Add-Content $env:GITHUB_STEP_SUMMARY '|---|---:|---:|---:|---|---|'
-              foreach ($r in $withBlockers) {
-                $proj = $r.project_key
-                $repo = $r.repo_slug
-                $open = $r.open_pr_count
-                $inpr = $r.build_inprogress_count
-                $fail = $r.build_failed_count
-                $succ = $r.build_success_count
-                $canc = $r.build_cancelled_count
-                $defb = if ($r.default_branch) { "`{$($r.default_branch)`}" } else { '_n/a_' }
-                $lcid = if ($r.latest_commit_id) { "`{$($r.latest_commit_id.Substring(0, [Math]::Min(12, $r.latest_commit_id.Length)))`}…" } else { '_n/a_' }
-                Add-Content $env:GITHUB_STEP_SUMMARY ("| `{0}` | `{1}` | {2} | {3}/{4}/{5}/{6} | {7} | {8} |" -f $proj, $repo, $open, $inpr, $fail, $succ, $canc, $defb, $lcid)
-              }
-              Add-Content $env:GITHUB_STEP_SUMMARY ''
-              Add-Content $env:GITHUB_STEP_SUMMARY '</details>'
-
-              Add-Content $env:GITHUB_STEP_SUMMARY ''
-              Add-Content $env:GITHUB_STEP_SUMMARY '### Action Required'
-              Add-Content $env:GITHUB_STEP_SUMMARY '- Resolve OPEN PRs and/or pause builds (INPROGRESS).'
-              Add-Content $env:GITHUB_STEP_SUMMARY '- Ensure default branch and latest commit are available.'
-              Add-Content $env:GITHUB_STEP_SUMMARY '- Re-run this check.'
-            } else {
-              Add-Content $env:GITHUB_STEP_SUMMARY '### ✅ No repositories with blockers'
+            # Helper: short commit hash
+            function ShortHash($h) {
+              if ([string]::IsNullOrEmpty($h)) { return '_n/a_' }
+              return ("`{0`}…" -f $h.Substring(0, [Math]::Min(12, $h.Length)))
             }
+
+            # --- Filter only the relevant categories for the summary ---
+            $withOpenPrs       = $data | Where-Object { $_.blockers -and ($_.blockers -match '\bOPEN_PRS\b') }
+            $withRunningBuilds = $data | Where-Object { $_.blockers -and ($_.blockers -match '\bRUNNING_BUILDS\b') }
+
+            # For releases: either a boolean/number column exists, or the blockers list contains RUNNING_RELEASES
+            $hasReleaseCol = $data[0].PSObject.Properties.Name -contains 'running_release_count'
+            if ($hasReleaseCol) {
+              $withRunningReleases = $data | Where-Object { [int]$_.running_release_count -gt 0 }
+            } else {
+              $withRunningReleases = $data | Where-Object { $_.blockers -and ($_.blockers -match '\bRUNNING_RELEASES\b') }
+            }
+
+            # --- Open PRs section ---
+            Add-Content $env:GITHUB_STEP_SUMMARY '### 📌 Repositories with **Open PRs**'
+            if ($withOpenPrs -and $withOpenPrs.Count -gt 0) {
+              Add-Content $env:GITHUB_STEP_SUMMARY ''
+              Add-Content $env:GITHUB_STEP_SUMMARY ('> Total: **{0}** repo(s)' -f $withOpenPrs.Count)
+              Add-Content $env:GITHUB_STEP_SUMMARY ''
+              Add-Content $env:GITHUB_STEP_SUMMARY '| Project Key | Repo | Open PR Count | Default Branch | Latest Commit |'
+              Add-Content $env:GITHUB_STEP_SUMMARY '|---|---|---:|---|---|'
+              foreach ($r in $withOpenPrs) {
+                $defb = if ($r.default_branch) { "`{$($r.default_branch)`}" } else { '_n/a_' }
+                $lcid = ShortHash $r.latest_commit_id
+                Add-Content $env:GITHUB_STEP_SUMMARY ("| `{0}` | `{1}` | {2} | {3} | {4} |" -f $r.project_key, $r.repo_slug, $r.open_pr_count, $defb, $lcid)
+              }
+            } else {
+              Add-Content $env:GITHUB_STEP_SUMMARY ''
+              Add-Content $env:GITHUB_STEP_SUMMARY '> ✅ None'
+            }
+
+            # --- Running Builds section ---
+            Add-Content $env:GITHUB_STEP_SUMMARY ''
+            Add-Content $env:GITHUB_STEP_SUMMARY '### 🏗️ Repositories with **Running Builds**'
+            if ($withRunningBuilds -and $withRunningBuilds.Count -gt 0) {
+              Add-Content $env:GITHUB_STEP_SUMMARY ''
+              Add-Content $env:GITHUB_STEP_SUMMARY ('> Total: **{0}** repo(s)' -f $withRunningBuilds.Count)
+              Add-Content $env:GITHUB_STEP_SUMMARY ''
+              Add-Content $env:GITHUB_STEP_SUMMARY '| Project Key | Repo | In-Progress | Failed | Successful | Cancelled | Default Branch | Latest Commit |'
+              Add-Content $env:GITHUB_STEP_SUMMARY '|---|---|---:|---:|---:|---:|---|---|'
+              foreach ($r in $withRunningBuilds) {
+                $defb = if ($r.default_branch) { "`{$($r.default_branch)`}" } else { '_n/a_' }
+                $lcid = ShortHash $r.latest_commit_id
+                Add-Content $env:GITHUB_STEP_SUMMARY ("| `{0}` | `{1}` | {2} | {3} | {4} | {5} | {6} | {7} |" -f `
+                  $r.project_key, $r.repo_slug, $r.build_inprogress_count, $r.build_failed_count, $r.build_success_count, $r.build_cancelled_count, $defb, $lcid)
+              }
+            } else {
+              Add-Content $env:GITHUB_STEP_SUMMARY ''
+              Add-Content $env:GITHUB_STEP_SUMMARY '> ✅ None'
+            }
+
+            # --- Running Releases section (shown only if present) ---
+            Add-Content $env:GITHUB_STEP_SUMMARY ''
+            Add-Content $env:GITHUB_STEP_SUMMARY '### 🎯 Repositories with **Running Releases**'
+            if ($withRunningReleases -and $withRunningReleases.Count -gt 0) {
+              Add-Content $env:GITHUB_STEP_SUMMARY ''
+              Add-Content $env:GITHUB_STEP_SUMMARY ('> Total: **{0}** repo(s)' -f $withRunningReleases.Count)
+              Add-Content $env:GITHUB_STEP_SUMMARY ''
+              if ($hasReleaseCol) {
+                Add-Content $env:GITHUB_STEP_SUMMARY '| Project Key | Repo | Running Releases | Default Branch | Latest Commit |'
+                Add-Content $env:GITHUB_STEP_SUMMARY '|---|---|---:|---|---|'
+                foreach ($r in $withRunningReleases) {
+                  $defb = if ($r.default_branch) { "`{$($r.default_branch)`}" } else { '_n/a_' }
+                  $lcid = ShortHash $r.latest_commit_id
+                  Add-Content $env:GITHUB_STEP_SUMMARY ("| `{0}` | `{1}` | {2} | {3} | {4} |" -f $r.project_key, $r.repo_slug, $r.running_release_count, $defb, $lcid)
+                }
+              } else {
+                # Fallback: when only a RUNNING_RELEASES tag exists in 'blockers'
+                Add-Content $env:GITHUB_STEP_SUMMARY '| Project Key | Repo | Note | Default Branch | Latest Commit |'
+                Add-Content $env:GITHUB_STEP_SUMMARY '|---|---|---|---|---|'
+                foreach ($r in $withRunningReleases) {
+                  $defb = if ($r.default_branch) { "`{$($r.default_branch)`}" } else { '_n/a_' }
+                  $lcid = ShortHash $r.latest_commit_id
+                  Add-Content $env:GITHUB_STEP_SUMMARY ("| `{0}` | `{1}` | RUNNING_RELEASES | {2} | {3} |" -f $r.project_key, $r.repo_slug, $defb, $lcid)
+                }
+              }
+            } else {
+              Add-Content $env:GITHUB_STEP_SUMMARY ''
+              Add-Content $env:GITHUB_STEP_SUMMARY '> ✅ None'
+            }
+
+            # Compact combined triage for the relevant repos (optional)
+            Add-Content $env:GITHUB_STEP_SUMMARY ''
+            Add-Content $env:GITHUB_STEP_SUMMARY '<details><summary>🔍 Combined details (PRs/Builds/Releases only)</summary>'
+            Add-Content $env:GITHUB_STEP_SUMMARY ''
+            Add-Content $env:GITHUB_STEP_SUMMARY '| Project Key | Repo | Open PRs | Builds (InProg/Fail/Succ/Cancel) | Releases (if any) | Default Branch | Latest Commit |'
+            Add-Content $env:GITHUB_STEP_SUMMARY '|---|---:|---:|---:|---:|---|---|'
+            $relevant = ($withOpenPrs + $withRunningBuilds + $withRunningReleases) | Sort-Object project_key, repo_slug -Unique
+            foreach ($r in $relevant) {
+              $defb = if ($r.default_branch) { "`{$($r.default_branch)`}" } else { '_n/a_' }
+              $lcid = ShortHash $r.latest_commit_id
+              $relCount = if ($hasReleaseCol) { $r.running_release_count } else { if ($r.blockers -match '\bRUNNING_RELEASES\b') { 1 } else { 0 } }
+              Add-Content $env:GITHUB_STEP_SUMMARY ("| `{0}` | `{1}` | {2} | {3}/{4}/{5}/{6} | {7} | {8} | {9} |" -f `
+                $r.project_key, $r.repo_slug, $r.open_pr_count, `
+                $r.build_inprogress_count, $r.build_failed_count, $r.build_success_count, $r.build_cancelled_count, `
+                $relCount, $defb, $lcid)
+            }
+            Add-Content $env:GITHUB_STEP_SUMMARY ''
+            Add-Content $env:GITHUB_STEP_SUMMARY '</details>'
           }
 
           # Footer
