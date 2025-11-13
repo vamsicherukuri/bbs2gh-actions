@@ -149,6 +149,12 @@ jobs:
 
           $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
+      - name: Reset Summary (table-only)
+        if: always()
+        shell: pwsh
+        run: |
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+    
       - name: Append Table Summary
         if: always()
         shell: pwsh
