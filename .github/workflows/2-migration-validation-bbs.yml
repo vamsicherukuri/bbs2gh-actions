@@ -8,27 +8,19 @@ on:
         required: true
         type: string
       bbs_base_url:
-        description: 'Bitbucket Server/DC base URL, e.g. https://bitbucket.example.com'
+        description: 'Bitbucket Server/DC base URL'
         required: true
         type: string
-      gh_host:
-        description: 'GitHub host (only if using GHES), e.g., ghes.yourco.com'
-        required: false
-        type: string
-  workflow_call:
-    inputs:
-      csv_path:
-        description: 'Path to CSV file with repository list'
-        required: true
-        type: string
-      bbs_base_url:
-        description: 'Bitbucket Server/DC base URL, e.g. https://bitbucket.example.com'
-        required: true
-        type: string
-      gh_host:
-        description: 'GitHub host (only if using GHES), e.g., ghes.yourco.com'
-        required: false
-        type: string
+  # workflow_call:
+  #   inputs:
+  #     csv_path:
+  #       description: 'Path to CSV file with repository list'
+  #       required: true
+  #       type: string
+  #     bbs_base_url:
+  #       description: 'Bitbucket Server/DC base URL'
+  #       required: true
+  #       type: string
 
 permissions:
   contents: read
