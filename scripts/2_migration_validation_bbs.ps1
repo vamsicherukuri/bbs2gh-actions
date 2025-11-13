@@ -224,7 +224,7 @@ function Validate-Migration {
     branch_count_match  = $branchCountOk
     commits_match_all   = $allCommitCountsMatch
     shas_match_all      = $allLatestShasMatch
-    gh_repo_exists      = $ghExists
+    # gh_repo_exists      = $ghExists
     gh_notes            = if ($ghExists) {
                             if ($ghBranchCount -eq 0 -and $bbsBranchCount -gt 0) { "no branches on GH" } else { "" }
                           } else {
@@ -284,8 +284,8 @@ function Validate-FromCSV {
 
     $rows = $global:RepoSummaries
     $md   = @()
-    $md  += "| GitHub Repo | BBS Repo | Branch Count (BBS/GH) | Branch Count Match | All Commit Counts Match | All Latest SHAs Match | GH Repo Exists | Notes |"
-    $md  += "|-------------|----------|------------------------|--------------------|-------------------------|-----------------------|----------------|-------|"
+    $md  += "| GitHub Repo | BBS Repo | Branch Count (BBS/GH) | Branch Count Match | All Commit Counts Match | All Latest SHAs Match | Notes |"
+    $md  += "|-------------|----------|------------------------|--------------------|-------------------------|-----------------------|-------|"
     foreach ($r in $rows) {
       $repoGh = "$($r.github_org)/$($r.github_repo)"
       $repoBb = "$($r.bbs_project_key)/$($r.bbs_repo)"
@@ -293,9 +293,9 @@ function Validate-FromCSV {
       $bcOk   = if ($r.branch_count_match) { "✅" } else { "❌" }
       $ccOk   = if ($r.commits_match_all)  { "✅" } else { "❌" }
       $shaOk  = if ($r.shas_match_all)     { "✅" } else { "❌" }
-      $exists = if ($r.gh_repo_exists)     { "✅" } else { "❌" }
+      # $exists = if ($r.gh_repo_exists)     { "✅" } else { "❌" }
       $notes  = $r.gh_notes
-      $md    += "| $repoGh | $repoBb | $bc | $bcOk | $ccOk | $shaOk | $exists | $notes |"
+      $md    += "| $repoGh | $repoBb | $bc | $bcOk | $ccOk | $shaOk | $notes |"
     }
     $md | Out-File -FilePath "validation-summary.md" -Encoding UTF8
   }
