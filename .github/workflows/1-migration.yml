@@ -11,40 +11,40 @@ on:
         options: ['1','2','3','4','5']
       csv_path:
         description: 'Path to repos CSV file'
-        required: false
-        default: 'repos.csv'
-        type: string
-      bbs_base_url:
-        description: 'Bitbucket Server/DC base URL (e.g., https://bitbucket.example.com)'
         required: true
-        type: string
-      trigger_validation:
-        description: 'Automatically trigger validation after migration'
-        required: false
-        default: false
-        type: boolean
-
-  workflow_call:
-    inputs:
-      max_concurrent:
-        description: 'Maximum concurrent migrations (1-5)'
-        required: false
-        default: '3'
-        type: string
-      csv_path:
-        description: 'Path to repos CSV file'
-        required: false
         default: 'repos.csv'
         type: string
       bbs_base_url:
         description: 'Bitbucket Server/DC base URL'
         required: true
         type: string
-      trigger_validation:
-        description: 'Automatically trigger validation after migration'
-        required: false
-        default: false
-        type: boolean
+      # trigger_validation:
+      #   description: 'Automatically trigger validation after migration'
+      #   required: false
+      #   default: false
+      #   type: boolean
+
+  # workflow_call:
+  #   inputs:
+  #     max_concurrent:
+  #       description: 'Maximum concurrent migrations (1-5)'
+  #       required: false
+  #       default: '3'
+  #       type: string
+  #     csv_path:
+  #       description: 'Path to repos CSV file'
+  #       required: false
+  #       default: 'repos.csv'
+  #       type: string
+  #     bbs_base_url:
+  #       description: 'Bitbucket Server/DC base URL'
+  #       required: true
+  #       type: string
+  #     trigger_validation:
+  #       description: 'Automatically trigger validation after migration'
+  #       required: false
+  #       default: false
+  #       type: boolean
 
 permissions:
   contents: read
