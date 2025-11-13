@@ -54,15 +54,15 @@ jobs:
           git config --global user.name  "GitHub Actions"
           git config --global user.email "actions@github.com"
 
-      - name: (Optional) Install gh bbs2gh extension
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          Write-Host "Installing gh bbs2gh extension..."
-          gh extension install github/gh-bbs2gh
-          Write-Host "Verifying installation..."
-          gh bbs2gh --help
+      # - name: (Optional) Install gh bbs2gh extension
+      #   shell: pwsh
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GH_PAT }}
+      #   run: |
+      #     Write-Host "Installing gh bbs2gh extension..."
+      #     gh extension install github/gh-bbs2gh
+      #     Write-Host "Verifying installation..."
+      #     gh bbs2gh --help
 
       - name: Resolve inputs to environment
         shell: pwsh
