@@ -1,4 +1,4 @@
-# BBS → GH Migration Validation Script (corrected)
+# BBS → GH Migration Validation Script (console-friendly output)
 # Uses ONLY the provided BbsBaseUrl for Bitbucket REST calls and ignores any host in CSV 'url'.
 # Expects CSV header with: project-key, repo, url, github_org, github_repo
 
@@ -7,6 +7,16 @@ param(
   [string]$CsvPath,
   [string]$BbsBaseUrl
 )
+
+# Ensure ANSI colors render in GitHub logs (Windows runners)
+if (-not $env:TERM) { $env:TERM = 'xterm' }
+
+# ANSI color helpers
+$GREEN = "`e[32m"
+$RED   = "`e[31m"
+$CYAN  = "`e[36m"
+$GRAY  = "`e[90m"
+$RESET = "`e[0m"
 
 Add-Type -AssemblyName System.Web
 
@@ -82,6 +92,11 @@ function Get-GhCommitsInfo([string]$org, [string]$repo, [string]$branch) {
   return [pscustomobject]@{ Count = $total; Latest = $latest }
 }
 
+function Status-Marker([bool]$ok) {
+  if ($ok) { return "${GREEN}✅ Matching${RESET}" }
+  else     { return "${RED}❌ Not Matching${RESET}" }
+}
+
 function Validate-Migration {
   param(
     [string]$bbsProjectKey,
@@ -91,66 +106,75 @@ function Validate-Migration {
     [string]$githubRepo
   )
 
-  Write-Output "[$(Get-Date)] Validating migration: $githubOrg/$githubRepo  (BBS: $bbsProjectKey/$bbsRepoSlug)" |
-    Tee-Object -FilePath $LOG_FILE -Append
+  $header = "[{0}] Validating migration: {1}/{2}  (BBS: {3}/{4})" -f (Get-Date), $githubOrg, $githubRepo, $bbsProjectKey, $bbsRepoSlug
+  Write-Host $header
+  $header | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
 
-  # GitHub repo info snapshot
-  gh repo view "$githubOrg/$githubRepo" --json createdAt,diskUsage,defaultBranchRef,isPrivate |
-    Out-File -FilePath "validation-$githubRepo.json"
+  # Optional GH repo snapshot (artifact)
+  gh repo view "$githubOrg/$githubRepo" --json createdAt,diskUsage,defaultBranchRef,isPrivate `
+    | Out-File -FilePath "validation-$githubRepo.json"
 
   $headers = Get-BbsHeaders
   $baseUrl = Get-BbsBaseUrl
 
-  # Branches
+  # --- Branch set comparison ---
   $ghBranches  = Get-GhBranches  -org $githubOrg -repo $githubRepo
   $bbsBranches = Get-BbsBranches -baseUrl $baseUrl -projectKey $bbsProjectKey -repoSlug $bbsRepoSlug -headers $headers
 
   $ghBranchCount  = $ghBranches.Count
   $bbsBranchCount = $bbsBranches.Count
-  $branchCountStatus = if ($ghBranchCount -eq $bbsBranchCount) { "✅ Matching" } else { "❌ Not Matching" }
+  $branchCountOk  = ($ghBranchCount -eq $bbsBranchCount)
 
-  Write-Output "[$(Get-Date)] Branch Count: BBS=$bbsBranchCount  GitHub=$ghBranchCount  $branchCountStatus" |
-    Tee-Object -FilePath $LOG_FILE -Append
+  $line = ("[{0}] Branch Count: {1}BBS={2}{3} | {1}GitHub={4}{3} | {5}" -f `
+    (Get-Date), $CYAN, $bbsBranchCount, $RESET, $ghBranchCount, (Status-Marker $branchCountOk))
+  Write-Host $line
+  $line | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
 
   $missingInGH  = $bbsBranches | Where-Object { $_ -notin $ghBranches }
   $missingInBBS = $ghBranches  | Where-Object { $_ -notin $bbsBranches }
 
   if ($missingInGH.Count -gt 0) {
-    Write-Output "[$(Get-Date)] Branches missing in GitHub: $($missingInGH -join ', ')" |
-      Tee-Object -FilePath $LOG_FILE -Append
+    $msg = "[{0}] Branches missing in GitHub: {1}" -f (Get-Date), ($missingInGH -join ', ')
+    Write-Host $msg
+    $msg | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
   }
   if ($missingInBBS.Count -gt 0) {
-    Write-Output "[$(Get-Date)] Branches missing in Bitbucket: $($missingInBBS -join ', ')" |
-      Tee-Object -FilePath $LOG_FILE -Append
+    $msg = "[{0}] Branches missing in Bitbucket: {1}" -f (Get-Date), ($missingInBBS -join ', ')
+    Write-Host $msg
+    $msg | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
   }
 
-  # Commits for common branches
+  # --- Per-branch details for common branches ---
   foreach ($branch in ($ghBranches | Where-Object { $_ -in $bbsBranches })) {
     $ghInfo  = Get-GhCommitsInfo  -org $githubOrg -repo $githubRepo -branch $branch
     $bbsInfo = Get-BbsCommitsInfo -baseUrl $baseUrl -projectKey $bbsProjectKey -repoSlug $bbsRepoSlug -branch $branch -headers $headers
 
-    $countMatch = ($ghInfo.Count -eq $bbsInfo.Count)
-    $shaMatch   = ($ghInfo.Latest -eq $bbsInfo.Latest)
+    $countOk = ($ghInfo.Count -eq $bbsInfo.Count)
+    $shaOk   = ($ghInfo.Latest -eq $bbsInfo.Latest)
 
-    $countStatus = if ($countMatch) { "✅ Matching" } else { "❌ Not Matching" }
-    $shaStatus   = if ($shaMatch)   { "✅ Matching" } else { "❌ Not Matching" }
+    $countLine = ("[{0}] Branch '{1}': {2}BBS Commits={3}{4} | {2}GitHub Commits={5}{4} | {6}" -f `
+      (Get-Date), $branch, $CYAN, $bbsInfo.Count, $RESET, $ghInfo.Count, (Status-Marker $countOk))
+    Write-Host $countLine
+    $countLine | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
 
-    Write-Output "[$(Get-Date)] Branch '$branch': BBS Commits=$($bbsInfo.Count)  GitHub Commits=$($ghInfo.Count)  $countStatus" |
-      Tee-Object -FilePath $LOG_FILE -Append
-    Write-Output "[$(Get-Date)] Branch '$branch': BBS SHA=$($bbsInfo.Latest)  GitHub SHA=$($ghInfo.Latest)  $shaStatus" |
-      Tee-Object -FilePath $LOG_FILE -Append
+    $shaLine =   ("[{0}] Branch '{1}': {2}BBS SHA={3}{4} | {2}GitHub SHA={5}{4} | {6}" -f `
+      (Get-Date), $branch, $CYAN, ($bbsInfo.Latest ?? ''), $RESET, ($ghInfo.Latest ?? ''), (Status-Marker $shaOk))
+    Write-Host $shaLine
+    $shaLine | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
   }
 
-  Write-Output "[$(Get-Date)] Validation complete for $githubOrg/$githubRepo" |
-    Tee-Object -FilePath $LOG_FILE -Append
+  $done = "[{0}] Validation complete for {1}/{2}" -f (Get-Date), $githubOrg, $githubRepo
+  Write-Host $done
+  $done | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
 }
 
 function Validate-FromCSV {
   param([string]$csvPath)
 
   if (-not (Test-Path $csvPath)) {
-    Write-Output "[$(Get-Date)] ERROR: CSV file not found: $csvPath" |
-      Tee-Object -FilePath $LOG_FILE -Append
+    $e = "[{0}] ERROR: CSV file not found: {1}" -f (Get-Date), $csvPath
+    Write-Host $e
+    $e | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
     return
   }
 
@@ -171,8 +195,10 @@ function Validate-FromCSV {
     $ghOrg         = $repo.github_org
     $ghRepo        = $repo.github_repo
 
-    Write-Output "[$(Get-Date)] Processing: BBS '$bbsProjectKey/$($repo.repo)' @ $($repo.url)  -->  GH '$ghOrg/$ghRepo'" |
-      Tee-Object -FilePath $LOG_FILE -Append
+    $processing = "[{0}] Processing: {1}{2}/{3}{4} -> {1}{5}/{6}{4}" -f `
+      (Get-Date), $CYAN, $bbsProjectKey, $repo.repo, $RESET, $ghOrg, $ghRepo
+    Write-Host $processing
+    $processing | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
 
     Validate-Migration -bbsProjectKey $bbsProjectKey `
                        -bbsRepoSlug   $bbsRepoSlug   `
@@ -181,10 +207,12 @@ function Validate-FromCSV {
                        -githubRepo    $ghRepo
   }
 
-  Write-Output "[$(Get-Date)] All validations from CSV completed" |
-    Tee-Object -FilePath $LOG_FILE -Append
+  $allDone = "[{0}] All validations from CSV completed" -f (Get-Date)
+  Write-Host $allDone
+  $allDone | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
 }
 
 # Entrypoint
 if (-not $CsvPath)    { throw "CsvPath is required" }
 if (-not $BbsBaseUrl) { throw "BbsBaseUrl is required" }
+Validate-FromCSV -csvPath $CsvPath
