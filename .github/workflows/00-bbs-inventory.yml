@@ -1,4 +1,4 @@
-name: bbs-repo-inventory
+name: 0-bbs-repo-inventory
 
 on:
   workflow_dispatch:
