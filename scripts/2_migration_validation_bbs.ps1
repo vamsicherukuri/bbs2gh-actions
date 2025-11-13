@@ -1,6 +1,6 @@
-# BBS → GH Migration Validation Script
-# Reads repos from CSV (expects header with: project-key, repo, url, github_org, github_repo)
-# Compares branches and commits between Bitbucket Server/DC and GitHub.
+# BBS → GH Migration Validation Script (corrected)
+# Uses ONLY the provided BbsBaseUrl for Bitbucket REST calls and ignores any host in CSV 'url'.
+# Expects CSV header with: project-key, repo, url, github_org, github_repo
 
 [CmdletBinding()]
 param(
@@ -27,9 +27,9 @@ function Get-BbsHeaders {
   throw "Provide Bitbucket credentials via BBS_TOKEN (preferred) or set BBS_AUTH_TYPE=Basic with BBS_USERNAME/BBS_PASSWORD."
 }
 
-function Compute-BbsBaseUrl([string]$repoUrl) {
-  if ($BbsBaseUrl) { return $BbsBaseUrl.TrimEnd('/') }
-  return ($repoUrl -replace '(?i)/projects/.*$','')
+function Get-BbsBaseUrl() {
+  if (-not $BbsBaseUrl) { throw "BbsBaseUrl is required" }
+  return $BbsBaseUrl.TrimEnd('/')
 }
 
 function Get-BbsBranches([string]$baseUrl, [string]$projectKey, [string]$repoSlug, [hashtable]$headers) {
@@ -99,13 +99,7 @@ function Validate-Migration {
     Out-File -FilePath "validation-$githubRepo.json"
 
   $headers = Get-BbsHeaders
-  $baseUrl = Compute-BbsBaseUrl $bbsRepoUrl
-
-  # Optional sanity check: ensure CSV URL host matches provided base
-  $fromCsv = ($bbsRepoUrl -replace '(?i)/projects/.*$','').TrimEnd('/')
-  if ($BbsBaseUrl -and ($fromCsv -ne $BbsBaseUrl.TrimEnd('/'))) {
-    throw "CSV URL host '$fromCsv' differs from BbsBaseUrl '$BbsBaseUrl' for repo '$githubRepo'."
-  }
+  $baseUrl = Get-BbsBaseUrl
 
   # Branches
   $ghBranches  = Get-GhBranches  -org $githubOrg -repo $githubRepo
@@ -173,7 +167,7 @@ function Validate-FromCSV {
   foreach ($repo in $repos) {
     $bbsProjectKey = $repo.'project-key'
     $bbsRepoSlug   = $repo.repo
-    $bbsUrl        = $repo.url
+    $bbsUrl        = $repo.url  # kept for logging/trace; not used for base URL
     $ghOrg         = $repo.github_org
     $ghRepo        = $repo.github_repo
 
