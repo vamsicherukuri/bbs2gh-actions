@@ -10,7 +10,7 @@
 
 [CmdletBinding()]
 param(
-  [string]$CsvPath = "repos.csv"
+  [string]$CsvPath = "$env:CSV_FILE"
 )
 
 Add-Type -AssemblyName System.Web
@@ -163,7 +163,7 @@ function Validate-Migration {
 }
 
 function Validate-FromCSV {
-  param([string]$csvPath = "repos.csv")
+  param([string]$csvPath = "$env:CSV_FILE")
 
   if (-not (Test-Path $csvPath)) {
     Write-Output "[$(Get-Date)] ERROR: CSV file not found: $csvPath" |
