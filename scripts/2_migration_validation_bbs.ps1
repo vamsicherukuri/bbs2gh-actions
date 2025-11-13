@@ -22,7 +22,7 @@ Add-Type -AssemblyName System.Web
 
 $LOG_FILE = "validation-log-$(Get-Date -Format 'yyyyMMdd').txt"
 
-# NEW: global array to collect per-repo summary rows
+# Accumulator for per-repo table
 $global:RepoSummaries = New-Object System.Collections.Generic.List[object]
 
 function Get-BbsHeaders {
@@ -75,24 +75,38 @@ function Get-BbsCommitsInfo([string]$baseUrl, [string]$projectKey, [string]$repo
   return [pscustomobject]@{ Count = $total; Latest = $latest }
 }
 
-function Get-GhBranches([string]$org, [string]$repo) {
-  $json = gh api "/repos/$org/$repo/branches" --paginate | ConvertFrom-Json
-  return $json | ForEach-Object { $_.name }
+# ---- GH helpers (safe, no error spam) ----
+function Test-GhRepoExists([string]$org, [string]$repo) {
+  try {
+    gh api -X GET "/repos/$org/$repo" | Out-Null
+    return $true
+  } catch {
+    return $false
+  }
 }
 
-function Get-GhCommitsInfo([string]$org, [string]$repo, [string]$branch) {
-  $total = 0
-  $latest = ""
-  $page = 1
-  $perPage = 100
-  do {
-    $encBranch = [System.Web.HttpUtility]::UrlEncode($branch)
-    $chunk = gh api "/repos/$org/$repo/commits?sha=$encBranch&page=$page&per_page=$perPage" | ConvertFrom-Json
-    if ($page -eq 1 -and $chunk.Count -gt 0) { $latest = $chunk[0].sha }
-    $total += $chunk.Count
-    $page++
-  } while ($chunk.Count -eq $perPage)
-  return [pscustomobject]@{ Count = $total; Latest = $latest }
+function Get-GhBranchesSafe([string]$org, [string]$repo) {
+  try {
+    $json = gh api "/repos/$org/$repo/branches" --paginate | ConvertFrom-Json
+    return $json | ForEach-Object { $_.name }
+  } catch {
+    return @()
+  }
+}
+
+function Get-GhCommitsInfoSafe([string]$org, [string]$repo, [string]$branch) {
+  try {
+    $total = 0; $latest = ""; $page = 1; $perPage = 100
+    do {
+      $encBranch = [System.Web.HttpUtility]::UrlEncode($branch)
+      $chunk = gh api "/repos/$org/$repo/commits?sha=$encBranch&page=$page&per_page=$perPage" | ConvertFrom-Json
+      if ($page -eq 1 -and $chunk.Count -gt 0) { $latest = $chunk[0].sha }
+      $total += $chunk.Count; $page++
+    } while ($chunk.Count -eq $perPage)
+    return [pscustomobject]@{ Count = $total; Latest = $latest }
+  } catch {
+    return [pscustomobject]@{ Count = 0; Latest = "" }
+  }
 }
 
 function Status-Marker([bool]$ok) {
@@ -114,16 +128,26 @@ function Validate-Migration {
   $header | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
 
   # Optional GH repo snapshot (artifact)
-  gh repo view "$githubOrg/$githubRepo" --json createdAt,diskUsage,defaultBranchRef,isPrivate `
-    | Out-File -FilePath "validation-$githubRepo.json"
+  try {
+    gh repo view "$githubOrg/$githubRepo" --json createdAt,diskUsage,defaultBranchRef,isPrivate `
+      | Out-File -FilePath "validation-$githubRepo.json"
+  } catch { }
 
   $headers = Get-BbsHeaders
   $baseUrl = Get-BbsBaseUrl
 
   # --- Branch set comparison ---
-  $ghBranches  = Get-GhBranches  -org $githubOrg -repo $githubRepo
-  $bbsBranches = Get-BbsBranches -baseUrl $baseUrl -projectKey $bbsProjectKey -repoSlug $bbsRepoSlug -headers $headers
+  $ghExists = Test-GhRepoExists -org $githubOrg -repo $githubRepo
+  if (-not $ghExists) {
+    $warn = "[{0}] GitHub repo not found or inaccessible: {1}/{2}. Treating GH side as empty." -f (Get-Date), $githubOrg, $githubRepo
+    Write-Host $warn
+    $warn | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
+    $ghBranches = @()
+  } else {
+    $ghBranches = Get-GhBranchesSafe -org $githubOrg -repo $githubRepo
+  }
 
+  $bbsBranches = Get-BbsBranches -baseUrl $baseUrl -projectKey $bbsProjectKey -repoSlug $bbsRepoSlug -headers $headers
   $ghBranchCount  = $ghBranches.Count
   $bbsBranchCount = $bbsBranches.Count
   $branchCountOk  = ($ghBranchCount -eq $bbsBranchCount)
@@ -152,8 +176,8 @@ function Validate-Migration {
   $allLatestShasMatch   = $true
 
   foreach ($branch in ($ghBranches | Where-Object { $_ -in $bbsBranches })) {
-    $ghInfo  = Get-GhCommitsInfo  -org $githubOrg -repo $githubRepo -branch $branch
-    $bbsInfo = Get-BbsCommitsInfo -baseUrl $baseUrl -projectKey $bbsProjectKey -repoSlug $bbsRepoSlug -branch $branch -headers $headers
+    $ghInfo  = Get-GhCommitsInfoSafe -org $githubOrg -repo $githubRepo -branch $branch
+    $bbsInfo = Get-BbsCommitsInfo    -baseUrl $baseUrl -projectKey $bbsProjectKey -repoSlug $bbsRepoSlug -branch $branch -headers $headers
 
     $countOk = ($ghInfo.Count -eq $bbsInfo.Count)
     $shaOk   = ($ghInfo.Latest -eq $bbsInfo.Latest)
@@ -176,7 +200,7 @@ function Validate-Migration {
   Write-Host $done
   $done | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
 
-  # NEW: push a per-repo summary row (for table + CSV)
+  # Per-repo summary row for table
   $summaryObj = [pscustomobject]@{
     github_org          = $githubOrg
     github_repo         = $githubRepo
@@ -234,12 +258,11 @@ function Validate-FromCSV {
   Write-Host $allDone
   $allDone | Tee-Object -FilePath $LOG_FILE -Append | Out-Null
 
-  # NEW: Write CSV + Markdown table for the summary
+  # Write CSV + Markdown table for the summary
   if ($global:RepoSummaries.Count -gt 0) {
     $csvPathOut = "validation-summary.csv"
     $global:RepoSummaries | Export-Csv -Path $csvPathOut -NoTypeInformation -Encoding UTF8
 
-    # Build Markdown table lines (also saved to file for the workflow to append to step summary)
     $rows = $global:RepoSummaries
     $md   = @()
     $md  += "| GitHub Repo | BBS Repo | Branch Count (BBS/GH) | Branch Count Match | All Commit Counts Match | All Latest SHAs Match |"
