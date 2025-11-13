@@ -39,7 +39,7 @@ jobs:
         run: |
           $missing = @()
           if (-not $env:BBS_BASE_URL) { $missing += 'BBS_BASE_URL (workflow input)' }
-          if (-not $env:BBS_PAT -and (-not $env:BBS_USERNAME -or -not $env:BBS_PASSWORD))) {
+          if (-not $env:BBS_PAT -and (-not $env:BBS_USERNAME -or -not $env:BBS_PASSWORD)) {
             $missing += 'BBS_PAT or BBS_USERNAME + BBS_PASSWORD (secrets)'
           }
           if ($missing.Count -gt 0) {
