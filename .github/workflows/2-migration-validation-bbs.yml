@@ -1,0 +1,125 @@
+name: 2-migration-validation-bbs
+
+on:
+  workflow_dispatch:
+    inputs:
+      csv_path:
+        description: 'Path to CSV file with repository list'
+        required: true
+        default: ''
+        type: string
+  workflow_call:
+    inputs:
+      csv_path:
+        description: 'Path to CSV file with repository list'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  validate-migrations:
+    name: Validate Migrated Repositories (BBS → GH)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    environment: PAT tokens
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup GitHub CLI
+        shell: pwsh
+        run: |
+          gh --version
+          git config --global user.name  "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: (Optional) Install gh bbs2gh extension
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          Write-Host "Installing gh bbs2gh extension..."
+          gh extension install github/gh-bbs2gh
+          Write-Host "Verifying installation..."
+          gh bbs2gh --help
+
+      - name: Validate CSV File & Columns
+        shell: pwsh
+        run: |
+          $csvPath = "${{ inputs.csv_path }}"
+          if (-not (Test-Path $csvPath)) {
+            Write-Error "CSV file not found: $csvPath"
+            exit 1
+          }
+          Write-Host "CSV file found: $csvPath"
+
+          # Validate required columns based on your header
+          $csv = Import-Csv -Path $csvPath
+          $required = @(
+            'project-key', # BBS project key
+            'repo',        # BBS repo slug/name
+            'url',         # Full repo URL
+            'github_org',  # Destination org
+            'github_repo'  # Destination repo
+          )
+          $cols = $csv[0].PSObject.Properties.Name
+          $missing = $required | Where-Object { $_ -notin $cols }
+          if ($missing.Count -gt 0) {
+            Write-Error ("Missing required columns in CSV: {0}" -f ($missing -join ', '))
+            exit 1
+          }
+          Write-Host "✅ CSV structure validation passed"
+          Write-Host "Total repositories to validate: $($csv.Count)"
+
+      - name: Run Migration Validation (BBS → GH)
+        shell: pwsh
+        env:
+          GH_PAT:         ${{ secrets.GH_PAT }}
+          GH_TOKEN:       ${{ secrets.GH_PAT }} # used by gh cli
+          # Choose ONE auth mode for Bitbucket Server/DC:
+          # 1) Bearer token (recommended on modern Bitbucket DC): set BBS_TOKEN and (optionally) BBS_AUTH_TYPE=Bearer
+          BBS_TOKEN:      ${{ secrets.BBS_TOKEN }}
+          BBS_AUTH_TYPE:  ${{ secrets.BBS_AUTH_TYPE }} # 'Bearer' (default when BBS_TOKEN present) or 'Basic'
+          # 2) Basic auth (older servers or if you prefer): set BBS_USERNAME and BBS_PASSWORD and BBS_AUTH_TYPE=Basic
+          BBS_USERNAME:   ${{ secrets.BBS_USERNAME }}
+          BBS_PASSWORD:   ${{ secrets.BBS_PASSWORD }}
+          CSV_FILE: ${{ inputs.csv_path }}
+        run: |
+          .\scripts\2_migration_validation_bbs.ps1 -CsvPath "${{ inputs.csv_path }}"
+
+      - name: Upload Validation Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results-bbs-${{ github.run_number }}
+          path: |
+            validation-*.txt
+            validation-*.json
+          retention-days: 30
+
+      - name: Generate Workflow Summary
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "## BBS → GH Migration Validation Summary" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host ""                               >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "**Run Number:** ${{ github.run_number }}" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "**CSV Path:** ${{ inputs.csv_path }}"     >> $env:GITHUB_STEP_SUMMARY
+          Write-Host ""                               >> $env:GITHUB_STEP_SUMMARY
+
+          $logFile = Get-ChildItem -Filter "validation-log-*.txt" |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+          if ($logFile) {
+            Write-Host "### Validation Log Preview" >> $env:GITHUB_STEP_SUMMARY
+            Write-Host "" >> $env:GITHUB_STEP_SUMMARY
+            Write-Host '```' >> $env:GITHUB_STEP_SUMMARY
+            Get-Content $logFile.FullName -Tail 50 | ForEach-Object { $_ >> $env:GITHUB_STEP_SUMMARY }
+            Write-Host '```' >> $env:GITHUB_STEP_SUMMARY
+            Write-Host "" >> $env:GITHUB_STEP_SUMMARY
+            Write-Host "📈 Full validation results are in workflow artifacts." >> $env:GITHUB_STEP_SUMMARY
+          }
