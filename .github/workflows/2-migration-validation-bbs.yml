@@ -11,16 +11,24 @@ on:
         description: 'Bitbucket Server/DC base URL, e.g. https://bitbucket.example.com'
         required: true
         type: string
-  # workflow_call:
-  #   inputs:
-  #     csv_path:
-  #       description: 'Path to CSV file with repository list'
-  #       required: true
-  #       type: string
-  #     bbs_base_url:
-  #       description: 'Bitbucket Server/DC base URL, e.g. https://bitbucket.example.com'
-  #       required: true
-  #       type: string
+      gh_host:
+        description: 'GitHub host (only if using GHES), e.g., ghes.yourco.com'
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      csv_path:
+        description: 'Path to CSV file with repository list'
+        required: true
+        type: string
+      bbs_base_url:
+        description: 'Bitbucket Server/DC base URL, e.g. https://bitbucket.example.com'
+        required: true
+        type: string
+      gh_host:
+        description: 'GitHub host (only if using GHES), e.g., ghes.yourco.com'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -36,6 +44,16 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      # Divert the job summary early so any step that writes to summary
+      # goes into a throwaway file. We'll restore the real summary at the end.
+      - name: Divert job summary to a temp file (ensure table-only later)
+        shell: pwsh
+        run: |
+          echo "REAL_SUMMARY=$env:GITHUB_STEP_SUMMARY" >> $env:GITHUB_ENV
+          $discard = Join-Path $env:RUNNER_TEMP "_discarded_summary.md"
+          echo "GITHUB_STEP_SUMMARY=$discard" >> $env:GITHUB_ENV
+          Write-Host "Diverted summary to: $discard"
 
       - name: Setup GitHub CLI
         shell: pwsh
@@ -60,10 +78,12 @@ jobs:
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             echo "CSV_FILE=${{ github.event.inputs.csv_path }}" >> $env:GITHUB_ENV
             echo "BBS_BASE_URL=${{ github.event.inputs.bbs_base_url }}" >> $env:GITHUB_ENV
+            if ("${{ github.event.inputs.gh_host }}") { echo "GH_HOST=${{ github.event.inputs.gh_host }}" >> $env:GITHUB_ENV }
           }
           else {
             echo "CSV_FILE=${{ inputs.csv_path }}" >> $env:GITHUB_ENV
             echo "BBS_BASE_URL=${{ inputs.bbs_base_url }}" >> $env:GITHUB_ENV
+            if ("${{ inputs.gh_host }}") { echo "GH_HOST=${{ inputs.gh_host }}" >> $env:GITHUB_ENV }
           }
 
       - name: Validate Inputs
@@ -73,6 +93,7 @@ jobs:
           if (-not $env:BBS_BASE_URL) { throw "bbs_base_url is required" }
           Write-Host "CSV_FILE=$env:CSV_FILE"
           Write-Host "BBS_BASE_URL=$env:BBS_BASE_URL"
+          if ($env:GH_HOST) { Write-Host "GH_HOST=$env:GH_HOST" }
 
       - name: Validate CSV File & Columns
         shell: pwsh
@@ -105,6 +126,7 @@ jobs:
         env:
           GH_PAT:        ${{ secrets.GH_PAT }}
           GH_TOKEN:      ${{ secrets.GH_PAT }}
+          GH_HOST:       ${{ env.GH_HOST }}   # Set only if provided
           BBS_TOKEN:     ${{ secrets.BBS_TOKEN }}
           BBS_AUTH_TYPE: ${{ secrets.BBS_AUTH_TYPE }}
           BBS_USERNAME:  ${{ secrets.BBS_USERNAME }}
@@ -112,7 +134,7 @@ jobs:
         run: |
           .\scripts\2_migration_validation_bbs.ps1 -CsvPath "$env:CSV_FILE" -BbsBaseUrl "$env:BBS_BASE_URL"
 
-      - name: Upload Validation Results
+      - name: Upload Validation Results (Logs + CSV + MD)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -120,36 +142,24 @@ jobs:
           path: |
             validation-*.txt
             validation-*.json
+            validation-summary.csv
+            validation-summary.md
+          overwrite: true
           retention-days: 30
 
-      - name: Generate Workflow Summary
+      # --- TABLE-ONLY SUMMARY ---
+      # Restore the real summary file and clear it.
+      - name: Restore real summary and clear it
         if: always()
         shell: pwsh
         run: |
-          $summary = @()
-          $summary += "## BBS to GH Migration Validation Summary"
-          $summary += ""
-          $summary += "**Run Number:** ${{ github.run_number }}"
-          $summary += "**CSV Path:** $env:CSV_FILE"
-          $summary += "**Bitbucket Base URL:** $env:BBS_BASE_URL"
-          $summary += ""
+          if (-not $env:REAL_SUMMARY) { throw "REAL_SUMMARY not set. Did the diversion step run?" }
+          $env:GITHUB_STEP_SUMMARY = $env:REAL_SUMMARY
+          [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, [string]::Empty)
+          Write-Host "Restored summary path: $env:GITHUB_STEP_SUMMARY (cleared)"
 
-          $logFile = Get-ChildItem -Filter "validation-log-*.txt" |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
-
-          if ($null -ne $logFile) {
-            $summary += "### Validation Log Preview"
-            $summary += ""
-            $summary += '```'
-            $summary += (Get-Content $logFile.FullName -Tail 50)
-            $summary += '```'
-            $summary += ""
-            $summary += "📈 Full validation results are in workflow artifacts."
-          }
-
-          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-
-      - name: Append Table Summary
+      # Append ONLY the Markdown table (no logs)
+      - name: Append Table Summary (ONLY)
         if: always()
         shell: pwsh
         run: |
@@ -161,6 +171,7 @@ jobs:
               $content
             ) -join "`n"
             $header | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            Write-Host "Table-only summary written."
           } else {
             Write-Host "validation-summary.md not found; skipping summary table."
           }
