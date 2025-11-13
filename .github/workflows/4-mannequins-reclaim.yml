@@ -8,29 +8,8 @@ on:
         required: true
         type: string
       csv_file:
-        description: 'CSV file path (leave empty to download from artifacts)'
-        required: false
-        default: ''
-        type: string
-      skip_invitation:
-        description: 'Skip sending invitation emails'
-        required: false
-        default: false
-        type: boolean
-      artifact_run_number:
-        description: 'Run number of the validation workflow to download CSV from (if csv_file is empty)'
-        required: false
-        type: string
-  
-  workflow_call:
-    inputs:
-      github_org:
-        description: 'GitHub organization name'
+        description: 'CSV file path'
         required: true
-        type: string
-      csv_file:
-        description: 'CSV file path (leave empty to download from artifacts)'
-        required: false
         default: ''
         type: string
       skip_invitation:
@@ -38,10 +17,23 @@ on:
         required: false
         default: false
         type: boolean
-      artifact_run_number:
-        description: 'Run number of the validation workflow to download CSV from (if csv_file is empty)'
-        required: false
-        type: string
+  
+  # workflow_call:
+  #   inputs:
+  #     github_org:
+  #       description: 'GitHub organization name'
+  #       required: true
+  #       type: string
+  #     csv_file:
+  #       description: 'CSV file path'
+  #       required: true
+  #       default: ''
+  #       type: string
+  #     skip_invitation:
+  #       description: 'Skip sending invitation emails'
+  #       required: false
+  #       default: false
+  #       type: boolean
 
 permissions:
   contents: read
