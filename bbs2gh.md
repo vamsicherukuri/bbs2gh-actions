@@ -118,18 +118,16 @@ flowchart TB
 - **GitHub**: Organization owner or admin access for destination
 - **SSH**: Key-based authentication to Bitbucket archive storage
 
-# Support and Troubleshooting
+## Support and Troubleshooting
 
-## Common Issues
+### Common Issues
+
 - **Authentication failures**: Verify tokens and SSH keys
 - **Network connectivity**: Check firewall and routing
 - **Feature flag access**: Contact GitHub Support for beta features
 - **Archive download issues**: Validate SSH configuration
 
----
-
-## Prerequisites & Security
-
+> Prerequisites & Security
 ```mermaid
 mindmap
   root((bbs2gh Migration))
@@ -155,3 +153,65 @@ mindmap
     Security
       Store in repo secrets
       Never commit secrets
+```
+> Migration Workflow Pipeline
+```mermaid
+flowchart LR
+    subgraph PreChecks[Pre-Migration]
+        X0[0-bbs-inventory.yml<br/>Generate Inventory Report]
+        X1[0-pr-pipeline-check.yml<br/>Validate PRs, Build/Release Pipelines]
+    end
+
+    subgraph Migration[Migration]
+        X2[1-migration.yml<br/>Run bbs2gh main migration]
+    end
+
+    subgraph Validation[Validation & Mannequins]
+        X3[2-migration-validation-bbs.yml<br/>Verify migration status]
+        X4[3-mannequins-validation.yml<br/>Generate mannequins report]
+        X5[4-mannequins-reclaim.yml<br/>Initiate invitations / reclaim]
+    end
+
+    X0 --> X1 --> X2 --> X3 --> X4 --> X5
+```
+
+> Dependencies & Data Flow
+```mermaid
+flowchart TB
+    subgraph Inputs[Inputs]
+      BB[Bitbucket DC<br/>URL, Shared Home]
+      Auth[Auth & Access<br/>BBS_USERNAME/BBS_PASSWORD/BBS_TOKEN<br/>SSH_USER/SSH_PRIVATE_KEY<br/>GH_PAT]
+      Flags[GEI Beta Flags<br/>Direct Upload Enabled]
+    end
+
+    subgraph Workflows[Workflows]
+      W0[0-bbs-inventory.yml]
+      W1[0-pr-pipeline-check.yml]
+      W2[1-migration.yml]
+      W3[2-migration-validation-bbs.yml]
+      W4[3-mannequins-validation.yml]
+      W5[4-mannequins-reclaim.yml]
+    end
+
+    BB --> W0
+    Auth --> W0
+    Auth --> W1
+    Flags --> W2
+    BB --> W2
+    Auth --> W2
+
+    W0 --> W1 --> W2 --> W3 --> W4 --> W5
+
+    subgraph Outputs[Outputs]
+      Inv[Inventory Report]
+      MigRes[Migrated Repositories on GHEC/GHEC+EMU/GHEC+DR]
+      Val[Validation Results]
+      Man[Mannequins Report & Reclaimed Accounts]
+    end
+
+    W0 --> Inv
+    W2 --> MigRes
+    W3 --> Val
+    W4 --> Man
+    W5 --> Man
+```
