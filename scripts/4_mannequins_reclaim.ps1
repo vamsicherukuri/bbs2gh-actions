@@ -33,7 +33,7 @@ Write-Host "Running: gh $($args -join ' ')"
 & gh @args
 
 if ($LASTEXITCODE -ne 0) {
-  throw "gh ado2gh reclaim-mannequin failed with exit code $LASTEXITCODE"
+  throw "gh bbs2gh reclaim-mannequin failed with exit code $LASTEXITCODE"
 }
 
 Write-Host "==> Mannequin reclaim completed successfully"
