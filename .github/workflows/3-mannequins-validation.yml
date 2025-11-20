@@ -18,22 +18,22 @@ on:
       #   default: false
       #   type: boolean
   
-  workflow_call:
-    inputs:
-      github_org:
-        description: 'GitHub organization name'
-        required: true
-        type: string
-      output_file:
-        description: 'Output CSV file name'
-        required: false
-        default: 'mannequins.csv'
-        type: string
-      trigger_reclaim:
-        description: 'Automatically trigger mannequin reclaim after validation'
-        required: false
-        default: false
-        type: boolean
+  # workflow_call:
+  #   inputs:
+  #     github_org:
+  #       description: 'GitHub organization name'
+  #       required: true
+  #       type: string
+  #     output_file:
+  #       description: 'Output CSV file name'
+  #       required: false
+  #       default: 'mannequins.csv'
+  #       type: string
+  #     trigger_reclaim:
+  #       description: 'Automatically trigger mannequin reclaim after validation'
+  #       required: false
+  #       default: false
+  #       type: boolean
 
 permissions:
   contents: read
