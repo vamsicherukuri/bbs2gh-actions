@@ -60,13 +60,13 @@ jobs:
           git config --global user.email "actions@github.com"
         shell: pwsh
       
-      - name: Install gh ado2gh extension
+      - name: Install gh bbs2gh extension
         run: |
-          Write-Host "Installing gh ado2gh extension..."
-          gh extension install github/gh-ado2gh
+          Write-Host "Installing gh bbs2gh extension..."
+          gh extension install github/gh-bbs2gh
           
           Write-Host "Verifying installation..."
-          gh ado2gh version
+          gh bbs2gh version
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
