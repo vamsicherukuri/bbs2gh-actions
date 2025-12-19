@@ -1,8 +1,4 @@
-project-key,project-name,repo,url,last-commit-date,repo-size-in-bytes,attachments-size-in-bytes,is-archived,pr-count
-BBSMIG,bbs-migration-demo,calotracker,http://20.84.89.88:7990/projects/BBSMIG/repos/calotracker,2025-09-07 08:15 PM,3141632,0,False,0
-BBSMIG,bbs-migration-demo,lab8,http://20.84.89.88:7990/projects/BBSMIG/repos/lab8,,217088,0,False,0
-BBSMIG,bbs-migration-demo,MavenHelloWorld,http://20.84.89.88:7990/projects/BBSMIG/repos/mavenhelloworld,2025-12-08 10:16 AM,27648,0,False,0
-BBSMIG,bbs-migration-demo,solar-system,http://20.84.89.88:7990/projects/BBSMIG/repos/solar-system,2025-09-08 10:23 AM,2137088,0,False,1
-BBSMIG,bbs-migration-demo,solid-api,http://20.84.89.88:7990/projects/BBSMIG/repos/solid-api,2025-12-18 11:58 AM,625664,0,False,2
-BBSMIG,bbs-migration-demo,Test21,http://20.84.89.88:7990/projects/BBSMIG/repos/test21,2025-12-10 07:00 AM,172032,0,False,0
-BBSMIG,bbs-migration-demo,voting_app,http://20.84.89.88:7990/projects/BBSMIG/repos/voting_app,,45056,0,False,0
+project-key,project-name,repo,url,last-commit-date,repo-size-in-bytes,attachments-size-in-bytes,is-archived,pr-count,github_org, github_repo, gh_repo_visibility
+BBSMIG,bbs-migration-demo,calotracker,http://20.84.89.88:7990/projects/BBSMIG/repos/calotracker,2025-09-07 08:15 PM,3141632,0,False,0,test-19-yash,repo1,private
+BBSMIG,bbs-migration-demo,lab8,http://20.84.89.88:7990/projects/BBSMIG/repos/lab8,,217088,0,False,0,test-19-yash,repo2,private
+BBSMIG,bbs-migration-demo,MavenHelloWorld,http://20.84.89.88:7990/projects/BBSMIG/repos/mavenhelloworld,2025-12-08 10:16 AM,27648,0,False,0,test-19-yash,repo3,private
