@@ -178,10 +178,13 @@ jobs:
           echo "Warnings present:   ${{ needs.readiness-check.outputs.has-warnings }}"
 
       - name: Wait for manual approval
-        uses: trstringer/manual-approval@v1
+        uses: akefirad/manual-approval-action@main
         with:
-          timeout-minutes: 4320  # up to 72 hours
-    
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          timeout-seconds: 86400         # e.g., wait up to 24 hours
+          approval-keywords: "approved!"
+          rejections-keywords: "cancel,reject!"
+          fail-on-rejection: true
   # ----------------------------------------------------------------
   # Job 3: Migration — unchanged functional logic from 1-migration.yml
   # ----------------------------------------------------------------
