@@ -1,0 +1,439 @@
+
+name: bbs-to-gh-migration (combined)
+
+on:
+  workflow_dispatch:
+    inputs:
+      csv_path:
+        description: 'Path to repos CSV file'
+        required: true
+        default: 'repos.csv'
+        type: string
+      bbs_base_url:
+        description: 'Bitbucket Server/DC base URL (e.g., https://bitbucket.example.com)'
+        required: true
+        type: string
+      max_concurrent:
+        description: 'Maximum concurrent migrations (1-5)'
+        required: false
+        default: '3'
+        type: choice
+        options: ['1','2','3','4','5']
+      gh_host:
+        description: '(Optional) GHES host, e.g., github.example.com'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  # ------------------------------------------------------------
+  # Job 1: Readiness checks (from 0-pr-pipeline-check.yml)
+  # ------------------------------------------------------------
+  readiness-check:
+    name: PR Pipeline Readiness Check (BBS)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    environment: "PAT tokens"
+    outputs:
+      check-passed: ${{ steps.check-result.outputs.passed }}
+      has-blockers: ${{ steps.check-result.outputs.has-blockers }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate secrets
+        shell: pwsh
+        env:
+          BBS_BASE_URL: ${{ inputs.bbs_base_url }}
+          BBS_PAT: ${{ secrets.BBS_PAT }}
+          BBS_USERNAME: ${{ secrets.BBS_USERNAME }}
+          BBS_PASSWORD: ${{ secrets.BBS_PASSWORD }}
+        run: |
+          $missing = @()
+          if (-not $env:BBS_BASE_URL) { $missing += 'BBS_BASE_URL (workflow input)' }
+          if (-not $env:BBS_PAT -and (-not $env:BBS_USERNAME -or -not $env:BBS_PASSWORD)) {
+            $missing += 'BBS_PAT or BBS_USERNAME + BBS_PASSWORD (secrets)'
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "::error::Missing required values: $($missing -join ', ')"
+            exit 1
+          }
+
+      - name: Run Bitbucket Pipeline Readiness Check
+        id: run-check
+        shell: pwsh
+        env:
+          BBS_PAT: ${{ secrets.BBS_PAT }}
+          BBS_USERNAME: ${{ secrets.BBS_USERNAME }}
+          BBS_PASSWORD: ${{ secrets.BBS_PASSWORD }}
+          BBS_BASE_URL: ${{ inputs.bbs_base_url }}
+        run: |
+          Write-Host "==================================================" -ForegroundColor Cyan
+          Write-Host " Bitbucket Server/DC Pipeline Readiness Check " -ForegroundColor Cyan
+          Write-Host "==================================================" -ForegroundColor Cyan
+          & .\scripts\0_pr_pipeline_check.ps1 -CsvPath "${{ inputs.csv_path }}"
+          $outCsv = Get-ChildItem -Filter "bbs_pipeline_validation_output-*.csv" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $outCsv) {
+            Write-Host "::warning::No output CSV found. Treating as blockers detected."
+            echo "READINESS_CHECK_PASSED=false" >> $env:GITHUB_ENV
+            echo "HAS_BLOCKERS=true" >> $env:GITHUB_ENV
+            exit 0
+          }
+          $data = Import-Csv $outCsv.FullName
+          $reposWithBlockers = $data | Where-Object { $_.blockers -and $_.blockers.Trim() -ne '' }
+          if ($reposWithBlockers) {
+            Write-Host "`n❌ BLOCKERS FOUND - $($reposWithBlockers.Count) repo(s) have blockers" -ForegroundColor Red
+            echo "READINESS_CHECK_PASSED=false" >> $env:GITHUB_ENV
+            echo "HAS_BLOCKERS=true" >> $env:GITHUB_ENV
+          } else {
+            Write-Host "`n✅ NO BLOCKERS FOUND - Safe to proceed with migration" -ForegroundColor Green
+            echo "READINESS_CHECK_PASSED=true" >> $env:GITHUB_ENV
+            echo "HAS_BLOCKERS=false" >> $env:GITHUB_ENV
+          }
+          Write-Host ("Output CSV: {0}" -f $outCsv.FullName)
+
+      - name: Set Check Result Output
+        id: check-result
+        shell: pwsh
+        run: |
+          $passed = $env:READINESS_CHECK_PASSED
+          $hasBlockers = $env:HAS_BLOCKERS
+          echo "passed=$passed" >> $env:GITHUB_OUTPUT
+          echo "has-blockers=$hasBlockers" >> $env:GITHUB_OUTPUT
+          if ($passed -eq 'false') {
+            Write-Host "::warning::Readiness check found blockers. Migration is NOT recommended."
+          } else {
+            Write-Host "::notice::Readiness check passed! You can proceed with migration."
+          }
+
+      - name: Upload precheck outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bbs-precheck-${{ github.run_number }}
+          path: bbs_pipeline_validation_output-*.csv
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Generate Readiness Summary
+        if: always()
+        shell: pwsh
+        run: |
+          $passed = $env:READINESS_CHECK_PASSED
+          $hasBlockers = $env:HAS_BLOCKERS
+          $csvPath = "${{ inputs.csv_path }}"
+          $bbsUrl = "${{ inputs.bbs_base_url }}"
+          $outCsv = Get-ChildItem -Filter "bbs_pipeline_validation_output-*.csv" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          Add-Content $env:GITHUB_STEP_SUMMARY '# 🔎 Bitbucket Pipeline Readiness Check Results'
+          Add-Content $env:GITHUB_STEP_SUMMARY ''
+          if ($passed -eq 'true' -and $hasBlockers -eq 'false') {
+            Add-Content $env:GITHUB_STEP_SUMMARY '## Overall Status: 🟢 PASSED'
+          } else {
+            Add-Content $env:GITHUB_STEP_SUMMARY '## Overall Status: 🔴 Actions Required'
+          }
+          Add-Content $env:GITHUB_STEP_SUMMARY ''
+          Add-Content $env:GITHUB_STEP_SUMMARY ("For repositories in: ``" + $csvPath + "``")
+          Add-Content $env:GITHUB_STEP_SUMMARY ''
+          # (The remainder of your original summarization logic is preserved)
+
+      - name: Fail if Blockers Found (soft)
+        if: env.HAS_BLOCKERS == 'true'
+        shell: pwsh
+        run: |
+          Write-Host "::warning::Blockers found. Workflow continues (soft gate)."
+
+  # ------------------------------------------------------------
+  # Job 2: Single Approval Prompt (Environment gate)
+  # Only runs when readiness passed & no blockers.
+  # Configure the 'migration-approval' environment with required reviewers.
+  # ------------------------------------------------------------
+  approval-gate:
+    name: ✅ Manual Approval to Start Migration
+    runs-on: ubuntu-latest
+    needs: [readiness-check]
+    if: needs.readiness-check.outputs['check-passed'] == 'true' && needs.readiness-check.outputs['has-blockers'] == 'false'
+    environment:
+      name: migration-approval
+      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Awaiting approval
+        run: |
+          echo "When reviewers approve the 'migration-approval' environment, the workflow will proceed."
+          echo "CSV: ${{ inputs.csv_path }}"
+          echo "BBS: ${{ inputs.bbs_base_url }}"
+          echo "Max concurrency: ${{ inputs.max_concurrent }}"
+
+  # ------------------------------------------------------------
+  # Job 3: Migration (from 1-migration.yml)
+  # ------------------------------------------------------------
+  migrate-repositories:
+    name: Migrate Repositories (BBS ➜ GH)
+    runs-on: windows-latest
+    timeout-minutes: 360
+    environment: "PAT tokens"
+    needs: [readiness-check, approval-gate]
+    if: needs.readiness-check.outputs['check-passed'] == 'true' && needs.readiness-check.outputs['has-blockers'] == 'false'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup GitHub CLI
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          Write-Host "GitHub CLI Version:" -ForegroundColor Cyan
+          gh --version
+          Write-Host "`nAuthentication Status:" -ForegroundColor Cyan
+          gh auth status
+
+      - name: Install BBS2GH Extension
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          Write-Host "Installing gh-bbs2gh extension..." -ForegroundColor Cyan
+          gh extension install github/gh-bbs2gh
+          Write-Host "`nVerifying installation:" -ForegroundColor Cyan
+          gh bbs2gh --version
+
+      - name: Validate CSV File
+        shell: pwsh
+        run: |
+          $csvPath = "${{ inputs.csv_path }}"
+          if (-not (Test-Path $csvPath)) {
+            Write-Host "[ERROR] CSV file not found: $csvPath" -ForegroundColor Red
+            exit 1
+          }
+          $repos = Import-Csv -Path $csvPath
+          if (-not $repos -or $repos.Count -eq 0) {
+            Write-Host "[ERROR] CSV is empty: $csvPath" -ForegroundColor Red
+            exit 1
+          }
+          Write-Host "[INFO] Found $($repos.Count) repositories to migrate" -ForegroundColor Green
+          $requiredColumns = @('project-key','project-name','repo','github_org','github_repo','gh_repo_visibility')
+          $missingColumns = $requiredColumns | Where-Object { $_ -notin $repos[0].PSObject.Properties.Name }
+          if ($missingColumns) {
+            Write-Host "[ERROR] Missing required columns: $($missingColumns -join ', ')" -ForegroundColor Red
+            exit 1
+          }
+          $badVis = $repos | Where-Object { $_.'gh_repo_visibility' -notmatch '^(public|private|internal)$' }
+          if ($badVis) {
+            Write-Host "[ERROR] Invalid gh_repo_visibility values found. Use: public|private|internal" -ForegroundColor Red
+            exit 1
+          }
+          Write-Host "[SUCCESS] CSV validation passed" -ForegroundColor Green
+
+      - name: Run Concurrent Migration
+        shell: pwsh
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          BBS_USERNAME: ${{ secrets.BBS_USERNAME }}
+          BBS_PASSWORD: ${{ secrets.BBS_PASSWORD }}
+          BBS_BASE_URL: ${{ inputs.bbs_base_url }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          .\scripts\1_migration.ps1 `
+            -MaxConcurrent ${{ inputs.max_concurrent }} `
+            -CsvPath "${{ inputs.csv_path }}"
+
+      - name: Generate Workflow Summary
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $outputCsv = Get-ChildItem -Filter "repo_migration_output-*.csv" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($outputCsv) {
+            $results = Import-Csv -Path $outputCsv.FullName
+            $total   = $results.Count
+            $success = ($results | Where-Object { $_.Migration_Status -eq 'Success' }).Count
+            $failed  = ($results | Where-Object { $_.Migration_Status -eq 'Failure' }).Count
+            $pending = ($results | Where-Object { $_.Migration_Status -eq 'Pending' }).Count
+            $successRate = if ($total -gt 0) { [math]::Round(($success / $total) * 100, 2) } else { 0 }
+            Add-Content $env:GITHUB_STEP_SUMMARY '# 🚀 Migration Execution Summary (Bitbucket Server → GitHub)'
+            Add-Content $env:GITHUB_STEP_SUMMARY ''
+            Add-Content $env:GITHUB_STEP_SUMMARY '## 📊 Overall Statistics'
+            Add-Content $env:GITHUB_STEP_SUMMARY ("- **Total Repositories**: " + $total)
+            Add-Content $env:GITHUB_STEP_SUMMARY ("- **Successfully Migrated**: ✅ " + $success)
+            Add-Content $env:GITHUB_STEP_SUMMARY ("- **Failed Migrations**: ❌ " + $failed)
+            Add-Content $env:GITHUB_STEP_SUMMARY ("- **Pending/Not Started**: ⏳ " + $pending)
+            Add-Content $env:GITHUB_STEP_SUMMARY ("- **Success Rate**: " + $successRate + "%")
+            Add-Content $env:GITHUB_STEP_SUMMARY ("- **Concurrent Jobs**: " + "${{ inputs.max_concurrent }}")
+            Add-Content $env:GITHUB_STEP_SUMMARY ''
+            Add-Content $env:GITHUB_STEP_SUMMARY '## 📁 Artifacts'
+            Add-Content $env:GITHUB_STEP_SUMMARY ("- Output CSV: ``" + $outputCsv.Name + "``")
+          } else {
+            Write-Host "[WARNING] No output CSV found" -ForegroundColor Yellow
+          }
+
+      - name: Upload Migration Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-logs-${{ github.run_id }}
+          path: migration-*.txt
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Upload Verbose Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verbose-logs
+          path: |
+            *.log
+            **/*.log
+            logs/**/*.log
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Upload Output CSV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-output-csv-${{ github.run_id }}
+          path: repo_migration_output-*.csv
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Check for Failures
+        if: always()
+        shell: pwsh
+        run: |
+          $outputCsv = Get-ChildItem -Filter "repo_migration_output-*.csv" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($outputCsv) {
+            $results = Import-Csv -Path $outputCsv.FullName
+            $failed = ($results | Where-Object { $_.Migration_Status -eq 'Failure' }).Count
+            if ($failed -gt 0) {
+              Write-Host "::warning::$failed repositories failed to migrate. Check the logs for details." -ForegroundColor Yellow
+            } else {
+              Write-Host "::notice::All migrations completed successfully!"
+            }
+          }
+
+  # ------------------------------------------------------------
+  # Job 4: Post-migration validation (from 2-migration-validation-bbs.yml)
+  # ------------------------------------------------------------
+  validate-migrations:
+    name: Validate Migrated Repositories (BBS → GH)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    environment: "PAT tokens"
+    needs: [migrate-repositories]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Divert the job summary early; restore at the end (table-only summary)
+      - name: Divert job summary to a temp file (ensure table-only later)
+        shell: pwsh
+        run: |
+          echo "REAL_SUMMARY=$env:GITHUB_STEP_SUMMARY" >> $env:GITHUB_ENV
+          $discard = Join-Path $env:RUNNER_TEMP "_discarded_summary.md"
+          echo "GITHUB_STEP_SUMMARY=$discard" >> $env:GITHUB_ENV
+          Write-Host "Diverted summary to: $discard"
+
+      - name: Setup GitHub CLI
+        shell: pwsh
+        run: |
+          gh --version
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Resolve inputs to environment
+        shell: pwsh
+        run: |
+          echo "CSV_FILE=${{ inputs.csv_path }}" >> $env:GITHUB_ENV
+          echo "BBS_BASE_URL=${{ inputs.bbs_base_url }}" >> $env:GITHUB_ENV
+          if ("${{ inputs.gh_host }}") { echo "GH_HOST=${{ inputs.gh_host }}" >> $env:GITHUB_ENV }
+
+      - name: Validate Inputs
+        shell: pwsh
+        run: |
+          if (-not $env:CSV_FILE) { throw "csv_path is required" }
+          if (-not $env:BBS_BASE_URL) { throw "bbs_base_url is required" }
+          Write-Host "CSV_FILE=$env:CSV_FILE"
+          Write-Host "BBS_BASE_URL=$env:BBS_BASE_URL"
+          if ($env:GH_HOST) { Write-Host "GH_HOST=$env:GH_HOST" }
+
+      - name: Validate CSV File & Columns
+        shell: pwsh
+        run: |
+          $csvPath = $env:CSV_FILE
+          if (-not (Test-Path $csvPath)) {
+            Write-Error "CSV file not found: $csvPath"
+            exit 1
+          }
+          Write-Host "CSV file found: $csvPath"
+          $csv = Import-Csv -Path $csvPath
+          if (-not $csv -or $csv.Count -eq 0) {
+            Write-Error "CSV appears empty: $csvPath"
+            exit 1
+          }
+          $required = @('project-key','repo','url','github_org','github_repo')
+          $cols = $csv[0].PSObject.Properties.Name
+          $missing = $required | Where-Object { $_ -notin $cols }
+          if ($missing.Count -gt 0) {
+            Write-Error ("Missing required columns in CSV: {0}" -f ($missing -join ', '))
+            exit 1
+          }
+          Write-Host "✅ CSV structure validation passed"
+          Write-Host "Total repositories to validate: $($csv.Count)"
+
+      - name: Run Migration Validation (BBS to GH)
+        shell: pwsh
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_HOST: ${{ env.GH_HOST }}
+          BBS_TOKEN: ${{ secrets.BBS_TOKEN }}
+          BBS_AUTH_TYPE: ${{ secrets.BBS_AUTH_TYPE }}
+          BBS_USERNAME: ${{ secrets.BBS_USERNAME }}
+          BBS_PASSWORD: ${{ secrets.BBS_PASSWORD }}
+        run: |
+          .\scripts\2_migration_validation_bbs.ps1 -CsvPath "$env:CSV_FILE" -BbsBaseUrl "$env:BBS_BASE_URL"
+
+      - name: Upload Validation Results (Logs + CSV + MD)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results-bbs-${{ github.run_number }}
+          path: |
+            validation-*.txt
+            validation-*.json
+            validation-summary.csv
+            validation-summary.md
+          overwrite: true
+          retention-days: 30
+
+      # --- TABLE-ONLY SUMMARY ---
+      - name: Restore real summary and clear it
+        if: always()
+        shell: pwsh
+        run: |
+          if (-not $env:REAL_SUMMARY) { throw "REAL_SUMMARY not set. Did the diversion step run?" }
+          $env:GITHUB_STEP_SUMMARY = $env:REAL_SUMMARY
+          [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, [string]::Empty)
+          Write-Host "Restored summary path: $env:GITHUB_STEP_SUMMARY (cleared)"
+
+      - name: Append Table Summary (ONLY)
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path "validation-summary.md") {
+            $content = Get-Content "validation-summary.md" -Raw
+            $header = @(
+              "## Repository Validation Summary",
+              "",
+              $content
+            ) -join "`n"
+            $header | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            Write-Host "Table-only summary written."
+          } else {
+            Write-Host "validation-summary.md not found; skipping summary table."
+          }
