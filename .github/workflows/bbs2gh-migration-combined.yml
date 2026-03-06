@@ -4,49 +4,49 @@ on:
   workflow_dispatch:
     inputs:
       csv_path:
-        description: 'Path to repos CSV file (example: repos.csv)'
+        description: Path to repos CSV file
         required: true
-        default: 'repos.csv'
+        default: repos.csv
         type: string
       bbs_base_url:
-        description: 'Bitbucket Server/Data Center base URL (example: https://bitbucket.example.com:7990)'
+        description: Bitbucket Server/Data Center base URL (e.g., https://bitbucket.example.com:7990)
         required: true
         type: string
       max_concurrent:
-        description: 'Maximum concurrent migrations (1-20)'
+        description: Maximum concurrent migrations (1-20)
         required: false
         default: '5'
         type: choice
         options: ['1','2','3','4','5','6','7','8','9','10','12','15','20']
-      # target_api_url:
-      #   description: 'GitHub target REST API base URL (Data Residency). Default: https://api.github.com'
-      #   required: false
-      #   default: 'https://api.github.com'
-      #   type: string
+      target_api_url:
+        description: GitHub target REST API base URL for Data Residency
+        required: false
+        default: https://api.github.com
+        type: string
       run_prechecks:
-        description: 'Run pre-migration readiness checks (Open PRs only)'
+        description: Run pre-migration readiness checks
         required: false
         default: true
         type: boolean
       run_migration:
-        description: 'Run migration stage'
+        description: Run migration stage
         required: false
         default: true
         type: boolean
       run_post_validation:
-        description: 'Run post-migration validation stage'
+        description: Run post-migration validation stage
         required: false
         default: true
         type: boolean
       approver:
-        description: 'GitHub username(s) allowed to approve (comma-separated)'
+        description: GitHub username(s) allowed to approve (comma-separated)
         required: true
-        default: 'e.g. naik123'
+        default: e.g. naik123
         type: string
       runner_label:
-        description: 'Runner label to use (e.g., ubuntu-latest or self-hosted)'
+        description: Runner label (ubuntu-latest or self-hosted)
         required: false
-        default: 'ubuntu-latest'
+        default: ubuntu-latest
         type: string
 
 permissions:
@@ -55,19 +55,16 @@ permissions:
   issues: write
 
 jobs:
-  readiness-check:
-    name: Pre-migration Readiness (Open PRs only)
+  prechecks:
+    name: Pre-migration Validation (Open PRs only)
     runs-on: ${{ inputs.runner_label }}
     timeout-minutes: 30
-    outputs:
-      has-warnings: ${{ steps.set-outputs.outputs.has_warnings }}
-      open-pr-repos: ${{ steps.set-outputs.outputs.open_pr_repos }}
-      output-csv: ${{ steps.set-outputs.outputs.output_csv }}
+    if: ${{ inputs.run_prechecks }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies (jq)
+      - name: Install jq
         shell: bash
         run: |
           set -euo pipefail
@@ -76,8 +73,7 @@ jobs:
             sudo apt-get install -y jq
           fi
 
-      - name: Run readiness check (script: 0_prechecks.sh)
-        if: ${{ inputs.run_prechecks }}
+      - name: Run prechecks (0_prechecks.sh)
         shell: bash
         env:
           BBS_BASE_URL: ${{ inputs.bbs_base_url }}
@@ -90,39 +86,8 @@ jobs:
           chmod +x scripts/*.sh || true
           ./scripts/0_prechecks.sh -c "${{ inputs.csv_path }}"
 
-      - name: Detect readiness output CSV + set job outputs
-        id: set-outputs
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${{ inputs.run_prechecks }}" != "true" ]]; then
-            echo "has_warnings=false" >> "$GITHUB_OUTPUT"
-            echo "open_pr_repos=0" >> "$GITHUB_OUTPUT"
-            echo "output_csv=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          out_csv=$(ls -1t bbs_pr_validation_output-*.csv 2>/dev/null | head -n 1 || true)
-          if [[ -z "$out_csv" ]]; then
-            echo "::warning::No readiness output CSV found (bbs_pr_validation_output-*.csv)." 
-            echo "has_warnings=true" >> "$GITHUB_OUTPUT"
-            echo "open_pr_repos=0" >> "$GITHUB_OUTPUT"
-            echo "output_csv=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          open_pr_repos=$(awk -F',' 'NR>1 && $5 ~ /^[0-9]+$/ && $5+0 > 0 {c++} END{print c+0}' "$out_csv")
-          if [[ "$open_pr_repos" -gt 0 ]]; then
-            echo "has_warnings=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_warnings=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "open_pr_repos=$open_pr_repos" >> "$GITHUB_OUTPUT"
-          echo "output_csv=$out_csv" >> "$GITHUB_OUTPUT"
-
-      - name: Upload readiness outputs
-        if: ${{ always() && inputs.run_prechecks }}
+      - name: Upload prechecks output
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bbs-prechecks-${{ github.run_id }}
@@ -130,73 +95,33 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      - name: Prechecks summary (repo-wise)
-        if: ${{ always() && inputs.run_prechecks }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          out_csv="${{ steps.set-outputs.outputs.output_csv }}"
-          {
-            echo "# 🔎 Pre-migration Readiness Summary (Open PRs only)"
-            echo
-            echo "- **CSV**: \`${{ inputs.csv_path }}\`"
-            echo "- **Bitbucket Base URL**: ${{ inputs.bbs_base_url }}"
-            echo "- **Repos with open PRs**: ${{ steps.set-outputs.outputs.open_pr_repos }}"
-            echo
-            if [[ -n "$out_csv" && -f "$out_csv" ]]; then
-              echo "## Repository-wise details"
-              echo
-              echo "| Project Key | Repo | Open PRs | Ready to migrate |"
-              echo "|---|---|---:|---|"
-              awk -F',' 'NR>1 {
-                pk=$1; repo=$3; pr=$5; ready=$7;
-                gsub(/\r/,"",ready);
-                marker=(ready=="true"?"✅":"⚠️");
-                print "| `"pk"` | `"repo"` | "pr" | "marker" |";
-              }' "$out_csv"
-            else
-              echo "⚠️ No prechecks CSV found to render details."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  approval-gate:
-    name: ✅ Manual Approval to Proceed
+  approval:
+    name: Manual Approval
     runs-on: ubuntu-latest
-    needs: [readiness-check]
+    needs: [prechecks]
     if: ${{ inputs.run_migration || inputs.run_post_validation }}
     steps:
-      - name: Context
-        shell: bash
-        run: |
-          echo "Approval is required to proceed."
-          echo "Prechecks run: ${{ inputs.run_prechecks }}"
-          echo "Repos with open PRs: ${{ needs.readiness-check.outputs.open-pr-repos }}"
-          echo "Warnings present: ${{ needs.readiness-check.outputs.has-warnings }}"
-
-      - name: Wait for manual approval
+      - name: Wait for approval
         uses: trstringer/manual-approval@v1
         with:
           secret: ${{ github.token }}
           approvers: ${{ inputs.approver }}
           minimum-approvals: 1
-          issue-title: "Approve migration to GitHub"
+          issue-title: Approve migration to GitHub
           issue-body: |
-            Please review the **Pre-migration Readiness Summary** in the workflow run.
-
-            Comment **approved** to proceed, or **deny** to stop.
+            Please comment **approved** to proceed, or **deny** to stop.
 
             - CSV: `${{ inputs.csv_path }}`
             - Bitbucket Base URL: `${{ inputs.bbs_base_url }}`
-            - Repos with open PRs: `${{ needs.readiness-check.outputs.open-pr-repos }}`
           exclude-workflow-initiator-as-approver: false
           fail-on-denial: true
           polling-interval-seconds: 30
 
-  migrate-repositories:
-    name: 🚀 Migrate Repositories (BBS ➜ GitHub)
+  migrate:
+    name: Migration
     runs-on: ${{ inputs.runner_label }}
     timeout-minutes: 360
-    needs: [approval-gate]
+    needs: [approval]
     if: ${{ inputs.run_migration }}
     steps:
       - name: Checkout
@@ -212,7 +137,7 @@ jobs:
           echo "$GH_TOKEN" | gh auth login --with-token
           gh auth status
 
-      - name: Install dependencies (jq)
+      - name: Install jq
         shell: bash
         run: |
           set -euo pipefail
@@ -232,7 +157,7 @@ jobs:
           fi
           gh bbs2gh --version
 
-      - name: Run migration (script: 1_migration.sh)
+      - name: Run migration (1_migration.sh)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -251,35 +176,25 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x scripts/*.sh || true
-          ./scripts/1_migration.sh \
-            --csv "${{ inputs.csv_path }}" \
-            --max-concurrent "${{ inputs.max_concurrent }}" \
-            --target-api-url "${{ inputs.target_api_url }}"
+          ./scripts/1_migration.sh --csv "${{ inputs.csv_path }}" --max-concurrent "${{ inputs.max_concurrent }}" --target-api-url "${{ inputs.target_api_url }}"
 
-      - name: Upload migration logs
+      - name: Upload migration outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: migration-logs-${{ github.run_id }}
-          path: migration-*.txt
+          name: migration-outputs-${{ github.run_id }}
+          path: |
+            migration-*.txt
+            repo_migration_output-*.csv
           retention-days: 90
           if-no-files-found: warn
 
-      - name: Upload migration output CSV
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: migration-output-csv-${{ github.run_id }}
-          path: repo_migration_output-*.csv
-          retention-days: 90
-          if-no-files-found: warn
-
-  validate-migrations:
-    name: ✅ Post-migration Validation (branches, commits, SHAs)
+  validate:
+    name: Post-migration Validation
     runs-on: ${{ inputs.runner_label }}
     timeout-minutes: 120
-    needs: [approval-gate, migrate-repositories]
-    if: ${{ inputs.run_post_validation && (needs.migrate-repositories.result == 'success' || needs.migrate-repositories.result == 'skipped') }}
+    needs: [approval, migrate]
+    if: ${{ inputs.run_post_validation && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -301,7 +216,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq python3
 
-      - name: Run validation (script: 2_validation.sh)
+      - name: Run validation (2_validation.sh)
         shell: bash
         env:
           BBS_BASE_URL: ${{ inputs.bbs_base_url }}
@@ -316,7 +231,7 @@ jobs:
           chmod +x scripts/*.sh || true
           ./scripts/2_validation.sh -c "${{ inputs.csv_path }}" -b "${{ inputs.bbs_base_url }}"
 
-      - name: Upload validation results
+      - name: Upload validation outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
