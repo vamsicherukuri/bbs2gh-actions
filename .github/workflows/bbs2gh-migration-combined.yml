@@ -280,11 +280,12 @@ jobs:
           set -euo pipefail
           mkdir -p "${{ runner.temp }}/bbs2gh-run"
       
-      - name: Ensure GH auth is stored for the derived host (for 1_migration.sh)
+      - name: Ensure gh credentials are stored for DR host (so 1_migration.sh passes)
         shell: bash
+        env:
+          GH_TOKEN: ''
         run: |
           set -euo pipefail
-          # This makes `gh auth status` (without --hostname) succeed inside 1_migration.sh
           echo "${GH_PAT}" | gh auth login --hostname "${GH_HOST}" --with-token
           gh auth status --hostname "${GH_HOST}"
           
