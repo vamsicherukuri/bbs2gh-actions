@@ -18,11 +18,11 @@ on:
         default: '5'
         type: choice
         options: ['1','2','3','4','5','6','7','8','9','10','12','15','20']
-      target_api_url:
-        description: GitHub target REST API base URL (DR). Leave empty to use repo variable TARGET_API_URL. Examples: https://api.github.com or https://api.<tenant>.ghe.com
-        required: false
-        default: ''
-        type: string
+      # target_api_url:
+      #   description: GitHub target REST API base URL (DR). Leave empty to use repo variable TARGET_API_URL. Examples: https://api.github.com or https://api.<tenant>.ghe.com
+      #   required: false
+      #   default: ''
+      #   type: string
       verbose:
         description: Enable verbose logging (sets VERBOSE=1 and uploads *.log artifacts if produced)
         required: false
