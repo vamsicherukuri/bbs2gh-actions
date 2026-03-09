@@ -17,6 +17,9 @@ validation-summary-*.md
 .env
 .env.*
 
+# ----- Local samples / scratch -----
+samples/
+
 # ----- OS / editor noise -----
 .DS_Store
 Thumbs.db
