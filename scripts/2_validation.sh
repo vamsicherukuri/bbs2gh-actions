@@ -153,7 +153,7 @@ echo "github_org,github_repo,bbs_project_key,bbs_repo,branch_count_bbs,branch_co
 echo "==> Starting validation..."
 
 # Process rows
-tail -n +2 "$CSV_PATH" | while IFS=',' read -r bbsProjectKey bbsProjectName bbsRepoSlug bbsUrl _lc _rb _ab isArchived prCount ghOrg ghRepo _vis; do
+tail -n +2 "$CSV_PATH" | while IFS=',' read -r bbsProjectKey bbsProjectName bbsRepoSlug ghOrg ghRepo _vis; do
   header_line="[$(date)] Processing: ${bbsProjectKey}/${bbsRepoSlug} -> ${ghOrg}/${ghRepo}"
   echo "$header_line" | tee -a "$LOG_FILE"
 

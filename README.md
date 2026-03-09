@@ -63,16 +63,14 @@ A **single combined workflow** orchestrates all 3 stages with an **issue-based m
 The scripts expect these columns (header names must match):
 
 ```csv
-project-key,project-name,repo,url,last-commit-date,repo-size-in-bytes,attachments-size-in-bytes,is-archived,pr-count,github_org,github_repo,gh_repo_visibility
+project-key,project-name,repo,github_org,github_repo,gh_repo_visibility
 ```
 
-**Minimum required columns used by scripts**:
+**Columns used by each script**:
 
 - **Prechecks**: `project-key,repo`
 - **Migration**: `project-key,project-name,repo,github_org,github_repo,gh_repo_visibility`
-- **Validation**: `project-key,repo,url,github_org,github_repo`
-
-> Tip: Keep a single CSV containing superset columns (as above). The scripts ignore extra columns they don’t need.
+- **Validation**: `project-key,project-name,repo,github_org,github_repo`
 
 ---
 

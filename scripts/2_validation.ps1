@@ -161,14 +161,12 @@ foreach ($line in $lines) {
   if ([string]::IsNullOrWhiteSpace($line)) { continue }
   $parts = $line.Split(',')
 
-  # Preserve original variable layout (expects many placeholders)
   $bbsProjectKey = if ($parts.Count -ge 1) { $parts[0] } else { '' }
   $bbsProjectName = if ($parts.Count -ge 2) { $parts[1] } else { '' }
   $bbsRepoSlug = if ($parts.Count -ge 3) { $parts[2] } else { '' }
-  $bbsUrl = if ($parts.Count -ge 4) { $parts[3] } else { '' }
 
-  $ghOrg = if ($parts.Count -ge 11) { $parts[9] } else { '' }
-  $ghRepo = if ($parts.Count -ge 11) { $parts[10] } else { '' }
+  $ghOrg = if ($parts.Count -ge 4) { $parts[3] } else { '' }
+  $ghRepo = if ($parts.Count -ge 5) { $parts[4] } else { '' }
 
   $header_line = "[$(Get-Date)] Processing: $bbsProjectKey/$bbsRepoSlug -> $ghOrg/$ghRepo"
   $header_line | Tee-Object -FilePath $LOG_FILE -Append
