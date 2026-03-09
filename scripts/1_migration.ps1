@@ -482,7 +482,12 @@ while (($QUEUE.Count -gt 0) -or ($JOB_JOBS.Keys.Count -gt 0)) {
 }
 
 Write-Host ""
+Write-Host ""
 Write-Host "[INFO] All migrations completed."
 $total_repos = (Get-Content -LiteralPath $CSV_PATH).Count - 1
 Write-Host "[SUMMARY] Total: $total_repos / Migrated: $($MIGRATED.Count) / Failed: $($FAILED.Count)"
 Write-Host "[INFO] Wrote migration results with Migration_Status column: $OUTPUT_CSV_PATH"
+
+# Clean up per-repo log files - their content was already streamed to the Actions run log
+Get-ChildItem -Path . -Filter 'migration-*.txt' | Remove-Item -Force -ErrorAction SilentlyContinue
+Write-Host "[INFO] Cleaned up per-repo log files."

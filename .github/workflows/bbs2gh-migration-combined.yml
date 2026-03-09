@@ -44,10 +44,27 @@ on:
         default: true
         type: boolean
       runner_label:
-        description: Runner label (ubuntu-latest or self-hosted)
+        description: "Runner to execute jobs on. Use 'ubuntu-latest' for GitHub-hosted runners or 'self-hosted' for your local self-hosted runner."
         required: false
         default: ubuntu-latest
-        type: string
+        type: choice
+        options:
+          - ubuntu-latest
+          - self-hosted
+      migrate_timeout_minutes:
+        description: |
+          Migrate job timeout in minutes.
+          GitHub-hosted runners are hard-capped at 360 min (6 h) regardless of this value.
+          Self-hosted runners support up to 35 days — increase this for large batches (e.g. 100+ repos).
+        required: false
+        default: '360'
+        type: choice
+        options:
+          - '360'
+          - '720'
+          - '1440'
+          - '2880'
+          - '4320'
 
 permissions:
   contents: read
@@ -153,7 +170,7 @@ jobs:
   migrate:
     name: Migration
     runs-on: ${{ inputs.runner_label }}
-    timeout-minutes: 360
+    timeout-minutes: ${{ fromJSON(inputs.migrate_timeout_minutes) }}
     needs: [prechecks]
     if: ${{ inputs.run_migration }}
     environment: migration-approval

@@ -518,3 +518,7 @@ echo "[INFO] All migrations completed."
 total_repos=$(( $(wc -l < "${CSV_PATH}") - 1 ))
 echo "[SUMMARY] Total: ${total_repos} / Migrated: ${#MIGRATED[@]} / Failed: ${#FAILED[@]}"
 echo "[INFO] Wrote migration results with Migration_Status column: ${OUTPUT_CSV_PATH}"
+
+# Clean up per-repo log files - their content was already streamed to the Actions run log
+rm -f migration-*.txt
+echo "[INFO] Cleaned up per-repo log files."
