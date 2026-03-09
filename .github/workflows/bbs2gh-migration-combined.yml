@@ -319,7 +319,6 @@ jobs:
     timeout-minutes: 120
     needs: [migrate]
     if: ${{ inputs.run_post_validation && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
-    environment: migration-approval
     env:
       GH_TOKEN: ${{ secrets.GH_PAT }}
       GH_PAT: ${{ secrets.GH_PAT }}
