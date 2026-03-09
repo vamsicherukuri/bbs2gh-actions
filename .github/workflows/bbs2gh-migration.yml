@@ -182,7 +182,10 @@ jobs:
         run: |
           set -euo pipefail
           gh --version
-          gh auth status --hostname "${GH_HOST}"  # host-specific check passes in your runs
+          # gh auth status exits 1 if any stored account is invalid (e.g. stale hosts.yml from
+          # a previous run). Use gh api instead — it resolves credentials via GH_TOKEN env var
+          # only and is unaffected by stale config file entries.
+          gh api user --hostname "${GH_HOST}" --jq '.login' | xargs echo "Authenticated as:"
 
       - name: Install dependencies (jq)
         shell: bash
