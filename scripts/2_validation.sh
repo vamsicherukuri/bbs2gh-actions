@@ -143,7 +143,7 @@ echo "Using Bitbucket Base URL: ${BASE_URL}"
 
 # Validate header
 header="$(head -n1 "$CSV_PATH")"
-for col in project-key repo url github_org github_repo; do
+for col in project-key project-name repo github_org github_repo; do
   echo "$header" | grep -q "$col" || { echo "Missing required column: ${col}" >&2; exit 1; }
 done
 

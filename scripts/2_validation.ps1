@@ -145,7 +145,7 @@ if ((Get-Item -LiteralPath $CSV_PATH).Length -eq 0) {
 }
 
 $header = (Get-Content -LiteralPath $CSV_PATH -TotalCount 1)
-foreach ($col in @('project-key','repo','url','github_org','github_repo')) {
+foreach ($col in @('project-key','project-name','repo','github_org','github_repo')) {
   if ($header -notmatch [Regex]::Escape($col)) {
     Write-Error "Missing required column: $col"
     exit 1
