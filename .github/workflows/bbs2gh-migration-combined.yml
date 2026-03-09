@@ -39,7 +39,7 @@ on:
         default: true
         type: boolean
       runner_label:
-        description: "Run the job on GitHub-hosted or self-hosted runners."
+        description: "Run on GitHub-hosted or self-hosted runners."
         required: false
         default: ubuntu-latest
         type: choice
