@@ -23,21 +23,6 @@ on:
         required: false
         default: false
         type: boolean
-      run_prechecks:
-        description: Run pre-migration readiness checks
-        required: false
-        default: true
-        type: boolean
-      run_migration:
-        description: Run migration stage
-        required: false
-        default: true
-        type: boolean
-      run_post_validation:
-        description: Run post-migration validation stage
-        required: false
-        default: true
-        type: boolean
       runner_label:
         description: "Run on GitHub-hosted or self-hosted runners."
         required: false
@@ -84,7 +69,6 @@ jobs:
           fi
 
       - name: Run prechecks (0_prechecks.sh)
-        if: ${{ inputs.run_prechecks }}
         shell: bash
         env:
           BBS_BASE_URL: ${{ inputs.bbs_base_url }}
@@ -103,10 +87,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          out_csv=""
-          if [[ "${{ inputs.run_prechecks }}" == "true" ]]; then
-            out_csv=$(ls -1t bbs_pr_validation_output-*.csv 2>/dev/null | head -n 1 || true)
-          fi
+          out_csv=$(ls -1t bbs_pr_validation_output-*.csv 2>/dev/null | head -n 1 || true)
 
           if [[ -n "$out_csv" && -f "$out_csv" ]]; then
             open_pr_repos=$(awk -F',' 'NR>1 && $5 ~ /^[0-9]+$/ && $5+0 > 0 {c++} END{print c+0}' "$out_csv")
@@ -121,7 +102,6 @@ jobs:
             echo
             echo "- **CSV input**: \`repos.csv\`"
             echo "- **Bitbucket Base URL**: \`${{ inputs.bbs_base_url }}\`"
-            echo "- **Prechecks enabled**: \`${{ inputs.run_prechecks }}\`"
             echo
 
             if [[ -z "$out_csv" || ! -f "$out_csv" ]]; then
@@ -151,7 +131,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload prechecks output
-        if: ${{ always() && inputs.run_prechecks }}
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bbs-prechecks-${{ github.run_id }}
@@ -164,7 +144,6 @@ jobs:
     runs-on: ${{ inputs.runner_label }}
     timeout-minutes: ${{ fromJSON(inputs.migrate_timeout_minutes) }}
     needs: [prechecks]
-    if: ${{ inputs.run_migration }}
     environment: migration-approval
     env:
       GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -327,7 +306,7 @@ jobs:
     runs-on: ${{ inputs.runner_label }}
     timeout-minutes: 120
     needs: [migrate]
-    if: ${{ inputs.run_post_validation && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
+    if: ${{ needs.migrate.result == 'success' }}
     env:
       GH_TOKEN: ${{ secrets.GH_PAT }}
       GH_PAT: ${{ secrets.GH_PAT }}
