@@ -27,14 +27,6 @@ Migrating repositories from Bitbucket Server to GitHub is a multi-stage process 
 
 This toolkit addresses those challenges through a staged, CSV-driven execution model. Each stage runs independently, produces machine-readable output, and can be executed from the command line or embedded inside a CI/CD pipeline. Failures in individual repositories are isolated — they do not block the remaining batch.
 
-At enterprise scale, this toolkit overcomes the following challenges:
-
-- ⏱️ Serial migration does not scale for large repository inventories
-- ⚠️ Open pull requests are silently dropped without advance readiness checks
-- 🔍 Manual post-migration verification leads to missed discrepancies
-- 📊 Tracking partial success and failures across large batches is operationally complex
-- 🌍 Data Residency requirements demand routing migrations through regional API endpoints
-
 ### Pipeline Execution Model
 
 > ℹ️ **Informational Only**  
