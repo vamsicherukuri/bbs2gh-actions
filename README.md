@@ -68,7 +68,7 @@ The [GitHub Enterprise Importer](https://github.com/github/gh-ado2gh) has the fo
   -  Admin or super admin permissions.
   -  If your Bitbucket Server instance runs Linux, SFTP access to the instance, using a supported SSH private key.
   -  If your Bitbucket Server instance runs Windows, file sharing (SMB) access to the instance.
--  **GitHub Data Residency** as the target, use `TARGET_API_URL`
+-  **GitHub Data Residency**, set `TARGET_API_URL` to the regional GitHub API endpoint (for example, https://api.tenant.ghe.com). 
 - **GitHub PAT** (`GH_PAT`) with scopes `admin:org`, and `workflow`
 - **Bitbucket Server:**
   - **Bitbucket Server URL:** `BBS_BASE_URL` — e.g., http://bitbucket.example.com:7990
@@ -80,6 +80,7 @@ The [GitHub Enterprise Importer](https://github.com/github/gh-ado2gh) has the fo
   - **SSH:**
     - `SSH_USER` - SSH username for the Bitbucket Server host.
     - `SSH_PRIVATE_KEY` — an unencrypted (passphrase-free) private key.
+- The `repos.csv` file must exist with the required columns: `project-key`, `project-name`, `repo`, `github_org`, `github_repo`, `gh_repo_visibility`.
 
 
 
