@@ -4,11 +4,24 @@
 [![Migration Tool](https://img.shields.io/badge/Tool-gh--bbs2gh-181717.svg)](https://github.com/github/gh-bbs2gh)
 [![Platform](https://img.shields.io/badge/Platform-Bash%20%7C%20PowerShell-blue.svg)](https://github.com/github/gh-bbs2gh)
 
-> A GitHub Actions–based solution for migrating **Bitbucket Server** repositories to **GitHub** at scale. Supports parallel migrations, pre-migration checks, post-migration validation, multiple storage backends, and GitHub Data Residency.
+---
+
+## 📋 Table of Contents
+
+- [Introduction](#-introduction)
+- [Limitations](#️-limitations)
+- [Prerequisites](#️-prerequisites)
+- [Initial Setup](#-initial-setup)
+- [Quick Start](#-quick-start)
+- [Artifacts and References](#-artifacts-and-references)
 
 ---
 
-## 🎯 Migration Challenges at Enterprise Scale
+## 📖 Introduction
+
+> A GitHub Actions–based solution for migrating **Bitbucket Server** repositories to **GitHub** at scale. Supports parallel migrations, pre-migration checks, post-migration validation, multiple storage backends, and GitHub Data Residency.
+
+### Migration Challenges at Enterprise Scale
 
 Migrating repositories from Bitbucket Server to GitHub is a multi-stage process that includes readiness validation, parallel repository migration, and post-migration verification. When applied across hundreds or thousands of repositories, this process becomes difficult to coordinate, error-prone, and hard to scale using ad-hoc commands.
 
@@ -22,20 +35,7 @@ At enterprise scale, this toolkit overcomes the following challenges:
 - 📊 Tracking partial success and failures across large batches is operationally complex
 - 🌍 Data Residency requirements demand routing migrations through regional API endpoints
 
----
-
-## 📋 Table of Contents
-
-- [Pipeline Execution Model](#-pipeline-execution-model)
-- [Limitations](#️-limitations)
-- [Prerequisites](#️-prerequisites)
-- [Initial Setup](#-initial-setup)
-- [Quick Start](#-quick-start)
-- [Migration Complete](#-migration-complete)
-
----
-
-## 📋 Pipeline Execution Model
+### Pipeline Execution Model
 
 > ℹ️ **Informational Only**  
 > This section is provided for **conceptual understanding** of the migration flow.  
@@ -43,7 +43,7 @@ At enterprise scale, this toolkit overcomes the following challenges:
 
 This toolkit orchestrates a **three-stage sequential migration process** from Bitbucket Server / Data Center to GitHub. Each stage can be run from the command line (Bash or PowerShell) or embedded in an Azure DevOps pipeline using the YAML definition in `samples/`.
 
-### Key Features
+#### Key Features
 
 - **Parallel Migration:** Stage 1 runs up to `--max-concurrent` migrations simultaneously (default: 3, max: 20), with a live `QUEUED / IN PROGRESS / MIGRATED / FAILED` status bar.
 
@@ -83,11 +83,11 @@ flowchart TB
     style Success fill:#e1ffe1
 ```
 
-### Stage Execution Details
+#### Stage Execution Details
 
 Each stage executes a specific script and generates a timestamped output file. Review each output before advancing to the next stage.
 
-### Stage 0️⃣: Prechecks (`0_prechecks.sh`)
+#### Stage 0️⃣: Prechecks (`0_prechecks.sh`)
 Executes a readiness check against the Bitbucket REST API to:
 
 - Authenticate against Bitbucket using PAT or Basic credentials
@@ -97,7 +97,7 @@ Executes a readiness check against the Bitbucket REST API to:
 
 > **⚠️ IMPORTANT**: Open PRs will **not** be migrated. Close or merge all open PRs before proceeding to Stage 1 to avoid data loss.
 
-### Stage 1️⃣: Repository Migration (`1_migration.sh`)
+#### Stage 1️⃣: Repository Migration (`1_migration.sh`)
 Executes parallel BBS → GitHub migrations to:
 
 - Read source/target mappings from `repos.csv`
@@ -106,7 +106,7 @@ Executes parallel BBS → GitHub migrations to:
 - Display a live status bar: `QUEUED / IN PROGRESS / MIGRATED / FAILED`
 - Write `repo_migration_output-<timestamp>.csv` tracking the final status of each repository
 
-### Stage 2️⃣: Validation (`2_validation.sh`)
+#### Stage 2️⃣: Validation (`2_validation.sh`)
 Executes post-migration validation (against successfully migrated repos only) to:
 
 - Compare branch names between Bitbucket and GitHub
@@ -352,11 +352,9 @@ A ready-to-use pipeline definition is available at `samples/ado2gh-migration.yml
 
 ---
 
-## 🎉 Migration Complete!
+## 📎 Artifacts and References
 
 After all three stages complete successfully, confirm the following checklist before decommissioning Bitbucket repositories.
-
-### Checklist
 
 - [ ] **Stage 0 output** — No `OPEN_PRS` warnings remain (or you have acknowledged the loss of open PRs).
 - [ ] **Stage 1 output** — All repositories in `repo_migration_output-<timestamp>.csv` show `MIGRATED`.
