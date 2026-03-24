@@ -140,6 +140,11 @@ The workflow file is already present at `bbs2gh-migration.yml`. You only need to
 4. **Review Stage 2 — Validation:**  The Validation job runs automatically after migration. Download artifact `validation-output-<run-id>` and check `validation-summary.md`:
       - ✅ All entries show Matching for branches, commit counts, and latest SHAs.
 
+5. **Mannequins generation and reclaim:**  After you run a migration, all user activity in the migrated repository (except Git commits) is attributed to placeholder identities called mannequins.
+    -  To generate a CSV file with a list of mannequins for an organization, Optionally, to include mannequins that have already been reclaimed, add the --include-reclaimed flag.: 
+    `gh bbs2gh generate-mannequin-csv --github-org TARGET_ORG --output mannequins-bbs.csv`
+    -  To reclaim generaate mannequins: 
+    `gh bbs2gh reclaim-mannequin --github-org TARGET_ORG --csv mannequins-bbs.csv`
 
 ---
 
